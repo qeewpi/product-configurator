@@ -36,6 +36,22 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local design storage
+.designs.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# misc
+TODO.md
+.next-dev.log
+server.log
+
+# AI Agents
+.claude
+AGENTS.md
+.agents/
+.agent/
+_agents/
+_agent/
