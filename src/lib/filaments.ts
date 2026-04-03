@@ -12,8 +12,4 @@ export const FILAMENT_PALETTE: Filament[] = [
   { name: "Yellow", hex: "#EAB308" },
   { name: "Orange", hex: "#EA580C" },
   { name: "Purple", hex: "#9333EA" },
-  { name: "Pink", hex: "#EC4899" },
-  { name: "Gray", hex: "#6B7280" },
-  { name: "Teal", hex: "#14B8A6" },
-  { name: "Gold", hex: "#CA8A04" },
 ];
