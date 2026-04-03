@@ -1,0 +1,177 @@
+"use client";
+
+import { useState } from "react";
+import dynamic from "next/dynamic";
+import ColorPanel from "./controls/ColorPanel";
+import LogoUpload from "./controls/LogoUpload";
+import LogoControls from "./controls/LogoControls";
+import ShareModal from "./controls/ShareModal";
+import { useDesignStore } from "@/lib/store";
+import { exportDesignAsStl } from "@/lib/stl-export";
+import type { ExportQuality } from "@/types/design";
+
+const Scene = dynamic(() => import("./viewer/Scene"), { ssr: false });
+
+const EXPORT_QUALITY_OPTIONS: Array<{
+  value: ExportQuality;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "fast",
+    label: "Fast",
+    description: "Smallest STL and quickest export",
+  },
+  {
+    value: "balanced",
+    label: "Balanced",
+    description: "Recommended mix of detail and file size",
+  },
+  {
+    value: "detailed",
+    label: "Detailed",
+    description: "Closest to the old high-detail export, with larger STL files",
+  },
+];
+
+export default function Configurator() {
+  const [showShare, setShowShare] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const serialize = useDesignStore((s) => s.serialize);
+  const exportQuality = useDesignStore((s) => s.exportQuality);
+  const setExportQuality = useDesignStore((s) => s.setExportQuality);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const config = serialize();
+      const res = await fetch("/api/designs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (res.ok) {
+        const { id } = await res.json();
+        useDesignStore.setState({ id });
+        setShowShare(true);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExportStl = async () => {
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      await exportDesignAsStl(serialize());
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Failed to export STL"
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row h-full">
+      {/* 3D Viewer */}
+      <div className="flex-1 min-h-[400px] lg:min-h-0 bg-zinc-100">
+        <Scene />
+      </div>
+
+      {/* Controls sidebar */}
+      <div className="w-full lg:w-[360px] border-l border-zinc-200 bg-white overflow-y-auto">
+        <div className="p-5 space-y-6">
+          <div>
+            <h2 className="text-lg font-bold text-zinc-900">
+              Customize Your Deck Case
+            </h2>
+            <p className="text-sm text-zinc-500 mt-1">
+              Pick colors and add your logo
+            </p>
+          </div>
+
+          <ColorPanel />
+
+          <div className="border-t border-zinc-100" />
+
+          <LogoUpload />
+          <LogoControls />
+
+          <div className="border-t border-zinc-100" />
+
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-700 uppercase tracking-wide">
+                STL Export Quality
+              </h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                Lower quality exports faster and keeps the file size smaller.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {EXPORT_QUALITY_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 px-3 py-3 transition-colors hover:border-zinc-300"
+                >
+                  <input
+                    type="radio"
+                    name="export-quality"
+                    value={option.value}
+                    checked={exportQuality === option.value}
+                    onChange={() => setExportQuality(option.value)}
+                    className="mt-1 h-4 w-4 border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-zinc-900">
+                      {option.label}
+                    </span>
+                    <span className="mt-1 block text-xs text-zinc-500">
+                      {option.description}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-zinc-100" />
+
+          {exportError ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {exportError}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={handleExportStl}
+            disabled={saving || exporting}
+            className="w-full py-3 px-4 border border-zinc-300 text-zinc-900 font-medium rounded-xl hover:bg-zinc-50 transition-colors disabled:opacity-50"
+          >
+            {exporting ? "Exporting STL..." : "Export STL"}
+          </button>
+
+          <button
+            onClick={handleSave}
+            disabled={saving || exporting}
+            className="w-full py-3 px-4 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save My Design"}
+          </button>
+        </div>
+      </div>
+
+      {showShare && (
+        <ShareModal onClose={() => setShowShare(false)} />
+      )}
+    </div>
+  );
+}
