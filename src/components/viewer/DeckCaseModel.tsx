@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import {
   getArtworkBounds,
-  getPanelArtworkSlices,
+  getContinuousPanelArtworkSlices,
   prepareDeckCaseGeometry,
 } from "@/lib/deck-case-artwork";
 import { useDesignStore } from "@/lib/store";
@@ -112,7 +112,7 @@ export default function DeckCaseModel() {
       return [];
     }
 
-    return getPanelArtworkSlices(
+    return getContinuousPanelArtworkSlices(
       lidPanelGeometries,
       artworkBounds,
       sourceWidth,

@@ -191,3 +191,48 @@ export function getPanelArtworkSlices(
     })
     .filter((slice): slice is PanelArtworkSlice => slice !== null);
 }
+
+export function getContinuousPanelArtworkSlices(
+  lidPanelGeometries: LidPanelGeometry[],
+  artworkBounds: ArtworkBounds,
+  sourceWidth: number,
+  sourceHeight: number
+) {
+  const slices = getPanelArtworkSlices(
+    lidPanelGeometries,
+    artworkBounds,
+    sourceWidth,
+    sourceHeight
+  ).sort((a, b) => a.overlapMinX - b.overlapMinX);
+
+  if (slices.length <= 1) {
+    return slices;
+  }
+
+  const leftMargin = Math.max(0, slices[0].overlapMinX - artworkBounds.minX);
+  const rightMargin = Math.max(
+    0,
+    artworkBounds.maxX - slices[slices.length - 1].overlapMaxX
+  );
+  const printableWidth = slices.reduce(
+    (sum, slice) => sum + slice.overlapWidth,
+    0
+  );
+  const collapsedArtworkWidth = Math.max(
+    leftMargin + printableWidth + rightMargin,
+    Number.EPSILON
+  );
+
+  let printableOffset = leftMargin;
+
+  return slices.map((slice) => {
+    const continuousSlice = {
+      ...slice,
+      sourceX: (printableOffset / collapsedArtworkWidth) * sourceWidth,
+      sourceCropWidth: (slice.overlapWidth / collapsedArtworkWidth) * sourceWidth,
+    } satisfies PanelArtworkSlice;
+
+    printableOffset += slice.overlapWidth;
+    return continuousSlice;
+  });
+}
