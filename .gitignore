@@ -47,6 +47,7 @@ next-env.d.ts
 TODO.md
 .next-dev.log
 server.log
+*.err.log
 
 # AI Agents
 .claude
