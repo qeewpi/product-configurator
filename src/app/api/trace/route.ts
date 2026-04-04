@@ -1,30 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
+import { traceRasterBufferToSvg } from "@/lib/server/vtracer";
+
+export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("image") as File;
+    const qualityValue = formData.get("quality");
+    const styleValue = formData.get("style");
+    const quality =
+      qualityValue === "fast" ||
+      qualityValue === "balanced" ||
+      qualityValue === "detailed"
+        ? qualityValue
+        : "balanced";
+    const style = styleValue === "lineart" ? "lineart" : "default";
 
     if (!file) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
-    // For MVP: wrap the raster image in an SVG container
-    // This preserves the image for preview purposes
-    // A proper potrace-based tracing can be added later
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64 = buffer.toString("base64");
-    const mimeType = file.type || "image/png";
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512" viewBox="0 0 512 512">
-  <image href="data:${mimeType};base64,${base64}" width="512" height="512" preserveAspectRatio="xMidYMid meet"/>
-</svg>`;
+    const svg = await traceRasterBufferToSvg({
+      buffer: Buffer.from(arrayBuffer),
+      fileName: file.name,
+      mimeType: file.type,
+      quality,
+      style,
+    });
 
     return NextResponse.json({ svg });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { error: "Failed to process image" },
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to process image",
+      },
       { status: 500 }
     );
   }
