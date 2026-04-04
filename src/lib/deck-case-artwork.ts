@@ -7,6 +7,7 @@ export interface LidPanelGeometry {
   bounds: THREE.Box3;
   center: THREE.Vector3;
   outerFaceZ: number;
+  exportSurfaceZ: number;
   width: number;
   height: number;
 }
@@ -103,6 +104,7 @@ export function prepareDeckCaseGeometry(rawGeometry: THREE.BufferGeometry) {
         bounds,
         center,
         outerFaceZ: bounds.max.z + PANEL_SURFACE_OFFSET,
+        exportSurfaceZ: bounds.max.z,
         width: bounds.max.x - bounds.min.x,
         height: bounds.max.y - bounds.min.y,
       };

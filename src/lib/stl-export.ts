@@ -9,7 +9,12 @@ import {
   type SVGResultPaths,
 } from "three/examples/jsm/loaders/SVGLoader.js";
 import { SimplifyModifier } from "three/examples/jsm/modifiers/SimplifyModifier.js";
-import type { DesignConfig, ExportQuality } from "@/types/design";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import type {
+  ArtworkStyle,
+  DesignConfig,
+  ExportQuality,
+} from "@/types/design";
 import {
   getArtworkBounds,
   getContinuousPanelArtworkSlices,
@@ -24,8 +29,11 @@ const MODEL_PATH = "/models/Plain.stl";
 const EXPORT_FILENAME = "deck-case-design.3mf";
 const MAX_MASK_RESOLUTION = 96;
 const MIN_ALPHA_THRESHOLD = 32;
-const EMBOSS_HEIGHT = 0.01;
-const EMBOSS_FACE_OFFSET = 0.001;
+const EMBOSS_HEIGHT = 0.6;
+const EMBOSS_WELD_DEPTH = 0.12;
+// Keep flat artwork thick enough to survive common 0.2mm slicing without
+// losing thin counters or interior separations in letters and line art.
+const FLAT_ARTWORK_DEPTH = 0.4;
 const DEFAULT_EMBOSS_COLOR = 0x222222;
 const MAX_EXPORT_COLORS = 8;
 const LINE_ART_MIN_ALPHA = 16;
@@ -69,6 +77,31 @@ type ExportPart = {
   geometry: THREE.BufferGeometry;
   name: string;
 };
+
+type ShapeCandidate = {
+  bounds: THREE.Box2;
+  color: THREE.ColorRepresentation;
+  points: THREE.Vector2[];
+  shape: THREE.Shape;
+};
+
+type HoleCandidate = {
+  bounds: THREE.Box2;
+  path: THREE.Path;
+  center: THREE.Vector2;
+};
+
+function getArtworkDepth(style: ArtworkStyle) {
+  return style === "emboss"
+    ? EMBOSS_HEIGHT + EMBOSS_WELD_DEPTH
+    : FLAT_ARTWORK_DEPTH;
+}
+
+function getArtworkBaseZ(panel: LidPanelGeometry, style: ArtworkStyle) {
+  return style === "emboss"
+    ? panel.exportSurfaceZ - EMBOSS_WELD_DEPTH
+    : panel.exportSurfaceZ - FLAT_ARTWORK_DEPTH;
+}
 
 const EXPORT_PROFILES: Record<ExportQuality, ExportProfile> = {
   fast: {
@@ -210,7 +243,8 @@ function createEmbossRowGeometry(
   row: number,
   slice: ReturnType<typeof getPanelArtworkSlices>[number],
   columns: number,
-  rows: number
+  rows: number,
+  style: ArtworkStyle
 ) {
   const cellWidth = slice.overlapWidth / columns;
   const cellHeight = slice.overlapHeight / rows;
@@ -219,16 +253,18 @@ function createEmbossRowGeometry(
     slice.overlapMinX + startColumn * cellWidth + boxWidth / 2;
   const centerY =
     slice.overlapMaxY - row * cellHeight - cellHeight / 2;
-  const centerZ = slice.panel.outerFaceZ + EMBOSS_FACE_OFFSET + EMBOSS_HEIGHT / 2;
+  const depth = getArtworkDepth(style);
+  const centerZ = getArtworkBaseZ(slice.panel, style) + depth / 2;
 
-  const geometry = new THREE.BoxGeometry(boxWidth, cellHeight, EMBOSS_HEIGHT);
+  const geometry = new THREE.BoxGeometry(boxWidth, cellHeight, depth);
   geometry.translate(centerX, centerY, centerZ);
   return normalizeGeometryForMerge(geometry);
 }
 
 function createEmbossGeometryFromSlice(
   slice: ReturnType<typeof getPanelArtworkSlices>[number],
-  image: HTMLImageElement
+  image: HTMLImageElement,
+  style: ArtworkStyle
 ) {
   const columns = Math.max(
     1,
@@ -282,11 +318,19 @@ function createEmbossGeometryFromSlice(
 
       if (!isOpaque && runStart !== -1) {
         geometries.push(
-          {
-            color: DEFAULT_EMBOSS_COLOR,
-            geometry: createEmbossRowGeometry(runStart, column, row, slice, columns, rows),
-            name: "emboss_slice",
-          }
+            {
+              color: DEFAULT_EMBOSS_COLOR,
+              geometry: createEmbossRowGeometry(
+                runStart,
+                column,
+                row,
+                slice,
+                columns,
+                rows,
+                style
+              ),
+              name: "emboss_slice",
+            }
         );
         runStart = -1;
       }
@@ -305,7 +349,8 @@ async function createEmbossGeometries(config: DesignConfig) {
       config.logo.vectorSvg,
       artworkBounds,
       lidPanelGeometries,
-      config.exportQuality
+      config.exportQuality,
+      config.artworkStyle
     );
 
     if (directGeometries.length > 0) {
@@ -319,7 +364,8 @@ async function createEmbossGeometries(config: DesignConfig) {
       image,
       artworkBounds,
       lidPanelGeometries,
-      config.exportQuality
+      config.exportQuality,
+      config.artworkStyle
     );
 
     if (fallbackGeometries.length > 0) {
@@ -331,7 +377,8 @@ async function createEmbossGeometries(config: DesignConfig) {
       tracedSvg,
       artworkBounds,
       lidPanelGeometries,
-      config.exportQuality
+      config.exportQuality,
+      config.artworkStyle
     );
 
     if (vectorGeometries.length > 0) {
@@ -344,7 +391,8 @@ async function createEmbossGeometries(config: DesignConfig) {
       config.logo.vectorSvg,
       artworkBounds,
       lidPanelGeometries,
-      config.exportQuality
+      config.exportQuality,
+      config.artworkStyle
     );
 
     if (vectorGeometries.length > 0) {
@@ -364,7 +412,9 @@ async function createEmbossGeometries(config: DesignConfig) {
     image.naturalHeight
   );
 
-  return slices.flatMap((slice) => createEmbossGeometryFromSlice(slice, image));
+  return slices.flatMap((slice) =>
+    createEmbossGeometryFromSlice(slice, image, config.artworkStyle)
+  );
 }
 
 function getSvgViewBox(svg: string) {
@@ -503,6 +553,117 @@ function maybeSimplifyGeometry(
   }
 }
 
+function isFiniteBox(box: THREE.Box3) {
+  return (
+    Number.isFinite(box.min.x) &&
+    Number.isFinite(box.min.y) &&
+    Number.isFinite(box.min.z) &&
+    Number.isFinite(box.max.x) &&
+    Number.isFinite(box.max.y) &&
+    Number.isFinite(box.max.z)
+  );
+}
+
+function validateExportGeometry(geometry: THREE.BufferGeometry) {
+  const position = geometry.getAttribute("position");
+  if (!position || position.count < 3) {
+    return false;
+  }
+
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox;
+  if (!bounds || !isFiniteBox(bounds)) {
+    return false;
+  }
+
+  const width = bounds.max.x - bounds.min.x;
+  const height = bounds.max.y - bounds.min.y;
+  const depth = bounds.max.z - bounds.min.z;
+
+  return (
+    width > Number.EPSILON &&
+    height > Number.EPSILON &&
+    depth > Number.EPSILON
+  );
+}
+
+function collectMergedEmbossParts(parts: ExportPart[]) {
+  const geometriesByColor = new Map<number, THREE.BufferGeometry[]>();
+
+  for (const part of parts) {
+    if (!validateExportGeometry(part.geometry)) {
+      part.geometry.dispose();
+      continue;
+    }
+
+    const color = new THREE.Color(part.color).getHex();
+    const bucket = geometriesByColor.get(color);
+    if (bucket) {
+      bucket.push(part.geometry);
+    } else {
+      geometriesByColor.set(color, [part.geometry]);
+    }
+  }
+
+  const mergedParts: ExportPart[] = [];
+
+  for (const [color, geometries] of geometriesByColor) {
+    const mergedGeometry =
+      geometries.length === 1
+        ? geometries[0].clone()
+        : mergeGeometries(geometries, false);
+
+    for (const geometry of geometries) {
+      geometry.dispose();
+    }
+
+    if (!mergedGeometry) {
+      continue;
+    }
+
+    const normalized = normalizeGeometryForMerge(mergedGeometry);
+    mergedGeometry.dispose();
+
+    if (!validateExportGeometry(normalized)) {
+      normalized.dispose();
+      continue;
+    }
+
+    mergedParts.push({
+      color,
+      geometry: normalized,
+      name: "emboss_merged",
+    });
+  }
+
+  return mergedParts;
+}
+
+function logExportStats(
+  config: DesignConfig,
+  baseGeometry: THREE.BufferGeometry,
+  embossParts: ExportPart[]
+) {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const baseTriangles = (baseGeometry.getAttribute("position")?.count ?? 0) / 3;
+  const embossTriangles = embossParts.reduce(
+    (sum, part) => sum + (part.geometry.getAttribute("position")?.count ?? 0) / 3,
+    0
+  );
+
+  console.info("[3MF export]", {
+    exportQuality: config.exportQuality,
+    artworkStyle: config.artworkStyle,
+    hasLogo: Boolean(config.logo.dataUrl || config.logo.vectorSvg),
+    meshCount: 1 + embossParts.length,
+    baseTriangles,
+    embossTriangles,
+  });
+}
+
 function isSvgLogo(config: DesignConfig) {
   const fileName = config.logo.originalFileName?.toLowerCase() ?? "";
   return fileName.endsWith(".svg");
@@ -514,9 +675,55 @@ function shouldSkipSvgPath(path: SVGResultPaths): boolean {
     if (style.fill === "none") return true;
     if (style.fillOpacity === 0 || style.opacity === 0) return true;
   }
-  const c = path.color;
-  if (c.r > 0.94 && c.g > 0.94 && c.b > 0.94) return true;
   return false;
+}
+
+function isLikelyBackgroundColor(color: THREE.Color) {
+  return color.r > 0.94 && color.g > 0.94 && color.b > 0.94;
+}
+
+function getPointsBounds(points: THREE.Vector2[]) {
+  const min = new THREE.Vector2(Infinity, Infinity);
+  const max = new THREE.Vector2(-Infinity, -Infinity);
+
+  for (const point of points) {
+    min.x = Math.min(min.x, point.x);
+    min.y = Math.min(min.y, point.y);
+    max.x = Math.max(max.x, point.x);
+    max.y = Math.max(max.y, point.y);
+  }
+
+  return new THREE.Box2(min, max);
+}
+
+function getBoundsCenter(bounds: THREE.Box2) {
+  return bounds.getCenter(new THREE.Vector2());
+}
+
+function createPathFromSubPath(subPath: THREE.Path) {
+  const path = new THREE.Path();
+  path.curves = subPath.curves;
+  return path;
+}
+
+function isPointInPolygon(point: THREE.Vector2, polygon: THREE.Vector2[]) {
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects =
+      yi > point.y !== yj > point.y &&
+      point.x < ((xj - xi) * (point.y - yi)) / (yj - yi || Number.EPSILON) + xi;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
 }
 
 function quantizeExportColor(color: THREE.ColorRepresentation) {
@@ -574,14 +781,16 @@ async function createPanelSplitSvgEmbossGeometries(
   svg: string,
   artworkBounds: ReturnType<typeof getArtworkBounds>,
   lidPanelGeometries: LidPanelGeometry[],
-  quality: ExportQuality
+  quality: ExportQuality,
+  style: ArtworkStyle
 ) {
   const renderedImage = await rasterizeSvgToImage(svg, quality);
   return createRasterVectorEmbossGeometries(
     renderedImage,
     artworkBounds,
     lidPanelGeometries,
-    quality
+    quality,
+    style
   );
 }
 
@@ -589,7 +798,8 @@ async function createRasterVectorEmbossGeometries(
   image: HTMLImageElement,
   artworkBounds: ReturnType<typeof getArtworkBounds>,
   lidPanelGeometries: LidPanelGeometry[],
-  quality: ExportQuality
+  quality: ExportQuality,
+  style: ArtworkStyle
 ) {
   const profile = getExportProfile(quality);
   const slices = getContinuousPanelArtworkSlices(
@@ -646,16 +856,84 @@ async function createRasterVectorEmbossGeometries(
     const sliceViewBox = getSvgViewBox(tracedSliceSvg);
     const scaleX = slice.overlapWidth / sliceViewBox.width;
     const scaleY = slice.overlapHeight / sliceViewBox.height;
-    const baseZ = slice.panel.outerFaceZ + EMBOSS_FACE_OFFSET;
+    const baseZ = getArtworkBaseZ(slice.panel, style);
+    const shapeCandidates: ShapeCandidate[] = [];
+    const holeCandidates: HoleCandidate[] = [];
 
     for (const path of svgData.paths) {
-      if (shouldSkipSvgPath(path)) continue;
+      if (shouldSkipSvgPath(path)) {
+        continue;
+      }
+
+      const isBackgroundPath = isLikelyBackgroundColor(path.color);
+      const sourcePaths = path.subPaths;
+
+      if (isBackgroundPath) {
+        for (const subPath of sourcePaths) {
+          const points = subPath.getPoints(profile.curveSegments * 2);
+          const bounds = getPointsBounds(points);
+          holeCandidates.push({
+            bounds,
+            center: getBoundsCenter(bounds),
+            path: createPathFromSubPath(subPath),
+          });
+        }
+        continue;
+      }
 
       const shapes = SVGLoader.createShapes(path);
       if (shapes.length === 0) continue;
 
-      const geometry = new THREE.ExtrudeGeometry(shapes, {
-        depth: EMBOSS_HEIGHT,
+      for (const shape of shapes) {
+        const points = shape.getPoints(profile.curveSegments * 2);
+        const bounds = getPointsBounds(points);
+
+        if (
+          bounds.getSize(new THREE.Vector2()).x *
+            bounds.getSize(new THREE.Vector2()).y <
+          profile.minPathPixelArea
+        ) {
+          continue;
+        }
+
+        shapeCandidates.push({
+          bounds,
+          color: quantizeExportColor(path.color),
+          points,
+          shape,
+        });
+      }
+    }
+
+    for (const hole of holeCandidates) {
+      let bestShape: ShapeCandidate | null = null;
+      let bestArea = Number.POSITIVE_INFINITY;
+
+      for (const candidate of shapeCandidates) {
+        if (!candidate.bounds.containsBox(hole.bounds)) {
+          continue;
+        }
+
+        if (!isPointInPolygon(hole.center, candidate.points)) {
+          continue;
+        }
+
+        const size = candidate.bounds.getSize(new THREE.Vector2());
+        const area = size.x * size.y;
+        if (area < bestArea) {
+          bestArea = area;
+          bestShape = candidate;
+        }
+      }
+
+      if (bestShape) {
+        bestShape.shape.holes.push(hole.path);
+      }
+    }
+
+    for (const candidate of shapeCandidates) {
+      const geometry = new THREE.ExtrudeGeometry(candidate.shape, {
+        depth: getArtworkDepth(style),
         bevelEnabled: false,
         curveSegments: profile.curveSegments,
         steps: 1,
@@ -679,9 +957,17 @@ async function createRasterVectorEmbossGeometries(
       geometry.translate(-sliceViewBox.minX, -sliceViewBox.minY, 0);
       geometry.scale(scaleX, -scaleY, 1);
       geometry.translate(slice.overlapMinX, slice.overlapMaxY, baseZ);
+      const simplified = maybeSimplifyGeometry(geometry, profile);
+      geometry.dispose();
+
+      if (!validateExportGeometry(simplified)) {
+        simplified.dispose();
+        continue;
+      }
+
       geometries.push({
-        color: quantizeExportColor(path.color),
-        geometry: maybeSimplifyGeometry(geometry, profile),
+        color: candidate.color,
+        geometry: simplified,
         name: "emboss_raster",
       });
     }
@@ -743,7 +1029,8 @@ async function save3mf(blob: Blob, fileName: string) {
 export async function exportDesignAsStl(config: DesignConfig) {
   const { regionGeometry } = await getPreparedModel();
   const baseGeometry = normalizeGeometryForMerge(regionGeometry);
-  const embossParts = await createEmbossGeometries(config);
+  const embossParts = collectMergedEmbossParts(await createEmbossGeometries(config));
+  logExportStats(config, baseGeometry, embossParts);
   const exportGroup = new THREE.Group();
   exportGroup.name = "deck-case-design";
   const baseMesh = new THREE.Mesh(

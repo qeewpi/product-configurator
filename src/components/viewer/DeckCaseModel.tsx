@@ -19,6 +19,7 @@ export default function DeckCaseModel() {
   const panelColors = useDesignStore((s) => s.panelColors);
   const bottomColor = useDesignStore((s) => s.bottomColor);
   const logo = useDesignStore((s) => s.logo);
+  const artworkStyle = useDesignStore((s) => s.artworkStyle);
 
   const preparedModel = useMemo(() => prepareDeckCaseGeometry(rawGeometry), [rawGeometry]);
   const { regionGeometry, lidPanelGeometries, topLidBounds } = preparedModel;
@@ -160,10 +161,11 @@ export default function DeckCaseModel() {
         return {
           panel: slice.panel,
           texture,
+          zOffset: artworkStyle === "emboss" ? 0.35 : 0.02,
         };
       })
       .filter((overlay): overlay is NonNullable<typeof overlay> => overlay !== null);
-  }, [artworkBounds, lidPanelGeometries, logo.dataUrl, logoTexture]);
+  }, [artworkBounds, artworkStyle, lidPanelGeometries, logo.dataUrl, logoTexture]);
 
   useEffect(() => {
     return () => {
@@ -186,11 +188,11 @@ export default function DeckCaseModel() {
       {panelImageOverlays.map((overlay, index) => (
         <mesh
           key={index}
-          position={[
-            overlay.panel.center.x,
-            overlay.panel.center.y,
-            overlay.panel.outerFaceZ,
-          ]}
+            position={[
+              overlay.panel.center.x,
+              overlay.panel.center.y,
+              overlay.panel.outerFaceZ + overlay.zOffset,
+            ]}
         >
           <planeGeometry args={[overlay.panel.width, overlay.panel.height]} />
           <meshStandardMaterial
@@ -199,7 +201,7 @@ export default function DeckCaseModel() {
             alphaTest={0.05}
             side={THREE.DoubleSide}
             polygonOffset
-            polygonOffsetFactor={-1}
+            polygonOffsetFactor={artworkStyle === "emboss" ? -2 : -1}
             depthWrite={false}
             roughness={0.3}
             metalness={0.1}

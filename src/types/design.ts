@@ -1,4 +1,5 @@
 export type ExportQuality = "fast" | "balanced" | "detailed";
+export type ArtworkStyle = "flat" | "emboss";
 
 export interface LogoConfig {
   dataUrl: string | null;
@@ -14,6 +15,7 @@ export interface DesignConfig {
   panelColors: [string, string, string];
   bottomColor: string;
   exportQuality: ExportQuality;
+  artworkStyle: ArtworkStyle;
   logo: LogoConfig;
   createdAt?: string;
   updatedAt?: string;
