@@ -85,87 +85,95 @@ export default function Configurator() {
       </div>
 
       {/* Controls sidebar */}
-      <div className="w-full lg:w-[360px] border-l border-zinc-200 bg-white overflow-y-auto">
-        <div className="p-5 space-y-6">
-          <div>
-            <h2 className="text-lg font-bold text-zinc-900">
-              Customize Your Deck Case
-            </h2>
-            <p className="text-sm text-zinc-500 mt-1">
-              Pick colors and add your logo
-            </p>
+      <div className="flex w-full flex-col border-l border-zinc-200 bg-white lg:w-[360px]">
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-5 pb-6">
+            <div className="space-y-6 [&>section:not(:last-child)]:border-b [&>section:not(:last-child)]:border-zinc-100 [&>section:not(:last-child)]:pb-6">
+              <section>
+                <div>
+                  <h2 className="text-lg font-bold text-zinc-900">
+                    Customize Your Deck Case
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Pick colors and add your logo
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <ColorPanel />
+              </section>
+
+              <section className="space-y-6">
+                <LogoUpload />
+                <LogoControls />
+              </section>
+
+              <section className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+                    STL Export Quality
+                  </h3>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Lower quality exports faster and keeps the file size smaller.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {EXPORT_QUALITY_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 px-3 py-3 transition-colors hover:border-zinc-300"
+                    >
+                      <input
+                        type="radio"
+                        name="export-quality"
+                        value={option.value}
+                        checked={exportQuality === option.value}
+                        onChange={() => setExportQuality(option.value)}
+                        className="mt-1 h-4 w-4 border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-zinc-900">
+                          {option.label}
+                        </span>
+                        <span className="mt-1 block text-xs text-zinc-500">
+                          {option.description}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </div>
           </div>
+        </div>
 
-          <ColorPanel />
-
-          <div className="border-t border-zinc-100" />
-
-          <LogoUpload />
-          <LogoControls />
-
-          <div className="border-t border-zinc-100" />
-
+        <div className="sticky bottom-0 border-t border-zinc-200 bg-white/95 p-5 backdrop-blur supports-[backdrop-filter]:bg-white/80">
           <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-700 uppercase tracking-wide">
-                STL Export Quality
-              </h3>
-              <p className="mt-1 text-xs text-zinc-500">
-                Lower quality exports faster and keeps the file size smaller.
+            {exportError ? (
+              <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {exportError}
               </p>
-            </div>
+            ) : null}
 
-            <div className="space-y-2">
-              {EXPORT_QUALITY_OPTIONS.map((option) => (
-                <label
-                  key={option.value}
-                  className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 px-3 py-3 transition-colors hover:border-zinc-300"
-                >
-                  <input
-                    type="radio"
-                    name="export-quality"
-                    value={option.value}
-                    checked={exportQuality === option.value}
-                    onChange={() => setExportQuality(option.value)}
-                    className="mt-1 h-4 w-4 border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-zinc-900">
-                      {option.label}
-                    </span>
-                    <span className="mt-1 block text-xs text-zinc-500">
-                      {option.description}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={handleExportStl}
+              disabled={saving || exporting}
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {exporting ? "Exporting STL..." : "Export STL"}
+            </button>
+
+            <button
+              onClick={handleSave}
+              disabled={saving || exporting}
+              className="w-full rounded-xl bg-zinc-900 px-4 py-3 font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save My Design"}
+            </button>
           </div>
-
-          <div className="border-t border-zinc-100" />
-
-          {exportError ? (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {exportError}
-            </p>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={handleExportStl}
-            disabled={saving || exporting}
-            className="w-full py-3 px-4 border border-zinc-300 text-zinc-900 font-medium rounded-xl hover:bg-zinc-50 transition-colors disabled:opacity-50"
-          >
-            {exporting ? "Exporting STL..." : "Export STL"}
-          </button>
-
-          <button
-            onClick={handleSave}
-            disabled={saving || exporting}
-            className="w-full py-3 px-4 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save My Design"}
-          </button>
         </div>
       </div>
 
