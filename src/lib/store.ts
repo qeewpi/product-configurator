@@ -30,11 +30,15 @@ const DEFAULT_STATE: DesignConfig = {
   artworkStyle: "flat",
   logo: {
     dataUrl: null,
+    rasterSourceDataUrl: null,
     vectorSvg: null,
     originalFileName: null,
     aspectRatio: 1,
+    backgroundMode: "auto",
+    processedBackgroundMode: null,
     position: { x: 0, y: LOGO_VERTICAL_CENTER_OFFSET },
     scale: 1,
+    color: null,
   },
 };
 
@@ -65,11 +69,15 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
     set({
       logo: {
         dataUrl: null,
+        rasterSourceDataUrl: null,
         vectorSvg: null,
         originalFileName: null,
         aspectRatio: 1,
+        backgroundMode: "auto",
+        processedBackgroundMode: null,
         position: { x: 0, y: LOGO_VERTICAL_CENTER_OFFSET },
         scale: 1,
+        color: null,
       },
     }),
 
@@ -107,8 +115,12 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
       logo: {
         ...state.logo,
         ...config.logo,
+        rasterSourceDataUrl: config.logo?.rasterSourceDataUrl ?? null,
         vectorSvg: config.logo?.vectorSvg ?? null,
         aspectRatio: config.logo?.aspectRatio ?? 1,
+        backgroundMode: config.logo?.backgroundMode ?? "auto",
+        processedBackgroundMode: config.logo?.processedBackgroundMode ?? null,
+        color: config.logo?.color ?? null,
       },
     })),
 
