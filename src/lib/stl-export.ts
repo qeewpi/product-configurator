@@ -1,7 +1,6 @@
 "use client";
 
 import * as THREE from "three";
-import ImageTracer from "imagetracerjs";
 import { exportTo3MF } from "three-3mf-exporter";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import {
@@ -16,6 +15,7 @@ import type {
   CaseModelId,
   DesignConfig,
   ExportQuality,
+  LogoBackgroundMode,
 } from "@/types/design";
 import {
   getArtworkBounds,
@@ -24,6 +24,12 @@ import {
   type TopLidBounds,
 } from "@/lib/deck-case-artwork";
 import { FILAMENT_PALETTE } from "@/lib/filaments";
+import { traceRasterBlobToSvg } from "@/lib/raster-trace-client";
+import {
+  normalizeLogoArtworkImageData,
+  resolveBackgroundMode,
+  type ResolvedLogoBackgroundMode,
+} from "@/lib/logo-background";
 
 const EXPORT_FILENAME = "deck-case-design.3mf";
 
@@ -35,25 +41,6 @@ const FLAT_ARTWORK_DEPTH = 0.4;
 
 const MAX_EXPORT_COLORS = 8;
 const LINE_ART_MIN_ALPHA = 16;
-const BACKGROUND_LUMINANCE_THRESHOLD = 242;
-const BACKGROUND_CHROMA_THRESHOLD = 28;
-const LINE_ART_TRACE_OPTIONS = {
-  ltres: 0.15,
-  qtres: 0.2,
-  pathomit: 1,
-  rightangleenhance: false,
-  colorsampling: 2,
-  numberofcolors: 12,
-  mincolorratio: 0.001,
-  colorquantcycles: 2,
-  layering: 0,
-  strokewidth: 0,
-  linefilter: false,
-  roundcoords: 2,
-  scale: 1,
-  blurradius: 0,
-  blurdelta: 20,
-} satisfies Parameters<typeof ImageTracer.imagedataToSVG>[1];
 
 const EXPORT_COLOR_PALETTE = FILAMENT_PALETTE.slice(0, MAX_EXPORT_COLORS).map(
   (filament) => new THREE.Color(filament.hex)
@@ -67,7 +54,6 @@ type ExportProfile = {
   minSimplifyVertexCount: number;
   minPathPixelArea: number;
   minPathWorldSize: number;
-  traceOptions: Parameters<typeof ImageTracer.imagedataToSVG>[1];
 };
 
 type ExportPart = {
@@ -104,55 +90,21 @@ function getArtworkBaseZ(panel: LidPanelGeometry, style: ArtworkStyle) {
 const EXPORT_PROFILES: Record<ExportQuality, ExportProfile> = {
   fast: {
     curveSegments: 6,
-    traceScale: 1.25,
-    maxTraceDimension: 768,
-    simplifyRatio: 0.55,
+    traceScale: 1.5,
+    maxTraceDimension: 1024,
+    simplifyRatio: 0.4,
     minSimplifyVertexCount: 180,
-    minPathPixelArea: 64,
-    minPathWorldSize: 0.28,
-    traceOptions: {
-      ltres: 0.7,
-      qtres: 0.7,
-      pathomit: 16,
-      rightangleenhance: true,
-      colorsampling: 0,
-      numberofcolors: 8,
-      mincolorratio: 0.006,
-      colorquantcycles: 2,
-      layering: 0,
-      strokewidth: 0,
-      linefilter: true,
-      roundcoords: 1,
-      scale: 1,
-      blurradius: 1,
-      blurdelta: 18,
-    },
+    minPathPixelArea: 24,
+    minPathWorldSize: 0.15,
   },
   balanced: {
     curveSegments: 8,
-    traceScale: 2,
-    maxTraceDimension: 1024,
-    simplifyRatio: 0.35,
+    traceScale: 3,
+    maxTraceDimension: 1536,
+    simplifyRatio: 0.2,
     minSimplifyVertexCount: 256,
-    minPathPixelArea: 36,
-    minPathWorldSize: 0.18,
-    traceOptions: {
-      ltres: 0.5,
-      qtres: 0.45,
-      pathomit: 8,
-      rightangleenhance: true,
-      colorsampling: 0,
-      numberofcolors: 12,
-      mincolorratio: 0.003,
-      colorquantcycles: 2,
-      layering: 0,
-      strokewidth: 0,
-      linefilter: true,
-      roundcoords: 1,
-      scale: 1,
-      blurradius: 1,
-      blurdelta: 16,
-    },
+    minPathPixelArea: 12,
+    minPathWorldSize: 0.1,
   },
   detailed: {
     curveSegments: 16,
@@ -160,25 +112,8 @@ const EXPORT_PROFILES: Record<ExportQuality, ExportProfile> = {
     maxTraceDimension: 3072,
     simplifyRatio: 0,
     minSimplifyVertexCount: 1000000,
-    minPathPixelArea: 8,
-    minPathWorldSize: 0.08,
-    traceOptions: {
-      ltres: 0.2,
-      qtres: 0.25,
-      pathomit: 2,
-      rightangleenhance: true,
-      colorsampling: 0,
-      numberofcolors: 24,
-      mincolorratio: 0.001,
-      colorquantcycles: 4,
-      layering: 0,
-      strokewidth: 0,
-      linefilter: false,
-      roundcoords: 2,
-      scale: 1,
-      blurradius: 0,
-      blurdelta: 16,
-    },
+    minPathPixelArea: 32,
+    minPathWorldSize: 0.15,
   },
 };
 
@@ -244,64 +179,88 @@ function setHighQualitySmoothing(
   }
 }
 
+function canvasToBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+
+      reject(new Error("Failed to encode trace image"));
+    }, "image/png");
+  });
+}
+
 
 async function createEmbossGeometries(config: DesignConfig) {
   const { lidPanelGeometries, topLidBounds } = await getPreparedModel(config.model);
   const artworkBounds = getArtworkBounds(config.logo, topLidBounds);
 
-  if (isSvgLogo(config) && config.logo.vectorSvg) {
-    const directGeometries = await createPanelSplitSvgEmbossGeometries(
+  // Prefer the pre-traced vectorSvg for all logos (SVG uploads and color-traced PNGs).
+  // This avoids expensive re-tracing during export.
+  if (config.logo.vectorSvg) {
+    // For raster-sourced logos (PNGs), don't override colors — let the
+    // natural multicolor from vtracer traces come through.
+    // Only apply logoColor for direct SVG uploads (monochrome vectors).
+    const colorOverride = isSvgLogo(config) ? config.logo.color : null;
+
+    const vectorGeometries = await createPanelSplitSvgEmbossGeometries(
       config.logo.vectorSvg,
       artworkBounds,
       lidPanelGeometries,
       config.exportQuality,
-      config.artworkStyle
+      config.artworkStyle,
+      config.logo.backgroundMode,
+      colorOverride
     );
 
-    if (directGeometries.length > 0) {
-      return directGeometries;
+    if (vectorGeometries.length > 0) {
+      return vectorGeometries;
     }
   }
 
-  if (config.logo.dataUrl && !isSvgLogo(config)) {
-    const image = await loadImage(config.logo.dataUrl);
+  // Fallback: re-trace from raster source if vectorSvg didn't produce geometry
+  if (config.logo.rasterSourceDataUrl || config.logo.dataUrl) {
+    const rasterSource = config.logo.rasterSourceDataUrl ?? config.logo.dataUrl;
+    if (!rasterSource) {
+      return [];
+    }
+
+    const image = await loadImage(rasterSource);
+    const backgroundCanvas = document.createElement("canvas");
+    backgroundCanvas.width = image.naturalWidth;
+    backgroundCanvas.height = image.naturalHeight;
+    const backgroundContext = backgroundCanvas.getContext("2d", {
+      willReadFrequently: true,
+    });
+    let resolvedBackgroundMode: ResolvedLogoBackgroundMode = "none";
+
+    if (backgroundContext) {
+      backgroundContext.drawImage(image, 0, 0);
+      resolvedBackgroundMode = resolveBackgroundMode(
+        backgroundContext.getImageData(
+          0,
+          0,
+          backgroundCanvas.width,
+          backgroundCanvas.height
+        ),
+        config.logo.backgroundMode
+      );
+    }
+
     const fallbackGeometries = await createRasterVectorEmbossGeometries(
       image,
       artworkBounds,
       lidPanelGeometries,
       config.exportQuality,
-      config.artworkStyle
+      config.artworkStyle,
+      resolvedBackgroundMode,
+      config.logo.color
     );
 
     if (fallbackGeometries.length > 0) {
       return fallbackGeometries;
-    }
-
-    const tracedSvg = createRasterSourceVectorSvg(image, config.exportQuality);
-    const vectorGeometries = await createPanelSplitSvgEmbossGeometries(
-      tracedSvg,
-      artworkBounds,
-      lidPanelGeometries,
-      config.exportQuality,
-      config.artworkStyle
-    );
-
-    if (vectorGeometries.length > 0) {
-      return vectorGeometries;
-    }
-  }
-
-  if (config.logo.vectorSvg) {
-    const vectorGeometries = await createPanelSplitSvgEmbossGeometries(
-      config.logo.vectorSvg,
-      artworkBounds,
-      lidPanelGeometries,
-      config.exportQuality,
-      config.artworkStyle
-    );
-
-    if (vectorGeometries.length > 0) {
-      return vectorGeometries;
     }
   }
 
@@ -329,73 +288,46 @@ function getSvgViewBox(svg: string) {
   return { minX: 0, minY: 0, width: width || 1, height: height || 1 };
 }
 
-function sanitizeTracedSvg(svg: string) {
-  const parser = new DOMParser();
-  const document = parser.parseFromString(svg, "image/svg+xml");
-  const root = document.documentElement;
-
-  for (const element of Array.from(root.querySelectorAll("*"))) {
-    const isHidden =
-      element.getAttribute("fill-opacity") === "0" ||
-      element.getAttribute("opacity") === "0" ||
-      (element.getAttribute("fill") === "none" &&
-        element.getAttribute("stroke") === "none");
-
-    if (isHidden) {
-      element.remove();
-    }
-  }
-
-  return new XMLSerializer().serializeToString(document);
-}
-
-function createLineArtTraceImageData(imageData: ImageData) {
-  const output = new ImageData(imageData.width, imageData.height);
-
-  for (let i = 0; i < imageData.data.length; i += 4) {
-    const alpha = imageData.data[i + 3];
-    if (alpha < LINE_ART_MIN_ALPHA) {
-      output.data[i] = 255;
-      output.data[i + 1] = 255;
-      output.data[i + 2] = 255;
-      output.data[i + 3] = 255;
-      continue;
-    }
-
-    const r = imageData.data[i];
-    const g = imageData.data[i + 1];
-    const b = imageData.data[i + 2];
-    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
-    const isNearWhiteBackground =
-      luminance >= BACKGROUND_LUMINANCE_THRESHOLD &&
-      chroma <= BACKGROUND_CHROMA_THRESHOLD;
-
-    output.data[i] = isNearWhiteBackground ? 255 : r;
-    output.data[i + 1] = isNearWhiteBackground ? 255 : g;
-    output.data[i + 2] = isNearWhiteBackground ? 255 : b;
-    output.data[i + 3] = 255;
-  }
-
-  return output;
-}
-
 function getExportProfile(quality: ExportQuality) {
   return EXPORT_PROFILES[quality] ?? EXPORT_PROFILES.balanced;
 }
 
-function traceImageDataToSvg(imageData: ImageData, profile: ExportProfile) {
-  const svg = ImageTracer.imagedataToSVG(createLineArtTraceImageData(imageData), {
-    ...LINE_ART_TRACE_OPTIONS,
-    ...profile.traceOptions,
+async function traceImageDataToSvg(
+  imageData: ImageData,
+  quality: ExportQuality,
+  backgroundMode: ResolvedLogoBackgroundMode
+) {
+  const tracedSource = normalizeLogoArtworkImageData(
+    imageData,
+    backgroundMode,
+    LINE_ART_MIN_ALPHA
+  );
+  const canvas = document.createElement("canvas");
+  canvas.width = tracedSource.imageData.width;
+  canvas.height = tracedSource.imageData.height;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Failed to prepare vector trace source");
+  }
+
+  context.putImageData(tracedSource.imageData, 0, 0);
+  const svg = await traceRasterBlobToSvg(await canvasToBlob(canvas), {
+    fileName: "trace-source.png",
+    quality,
+    style: "default",
   });
 
-  return sanitizeTracedSvg(svg);
+  return {
+    svg,
+    shouldFilterBackground: tracedSource.shouldFilterBackground,
+  };
 }
 
-function createRasterSourceVectorSvg(
+async function createRasterSourceVectorSvg(
   image: HTMLImageElement,
-  quality: ExportQuality
+  quality: ExportQuality,
+  backgroundMode: ResolvedLogoBackgroundMode
 ) {
   const profile = getExportProfile(quality);
   const traceScale = Math.min(
@@ -417,7 +349,12 @@ function createRasterSourceVectorSvg(
   context.clearRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
 
-  return traceImageDataToSvg(context.getImageData(0, 0, width, height), profile);
+  const traced = await traceImageDataToSvg(
+    context.getImageData(0, 0, width, height),
+    quality,
+    backgroundMode
+  );
+  return traced.svg;
 }
 
 function maybeSimplifyGeometry(
@@ -572,8 +509,16 @@ function shouldSkipSvgPath(path: SVGResultPaths): boolean {
   return false;
 }
 
-function isLikelyBackgroundColor(color: THREE.Color) {
-  return color.r > 0.94 && color.g > 0.94 && color.b > 0.94;
+function isLikelyBackgroundColor(
+  color: THREE.Color,
+  shouldFilterBackground: boolean
+) {
+  return (
+    shouldFilterBackground &&
+    color.r > 0.94 &&
+    color.g > 0.94 &&
+    color.b > 0.94
+  );
 }
 
 function getPointsBounds(points: THREE.Vector2[]) {
@@ -676,16 +621,117 @@ async function createPanelSplitSvgEmbossGeometries(
   artworkBounds: ReturnType<typeof getArtworkBounds>,
   lidPanelGeometries: LidPanelGeometry[],
   quality: ExportQuality,
-  style: ArtworkStyle
+  style: ArtworkStyle,
+  _backgroundMode: LogoBackgroundMode,
+  logoColor: string | null
 ) {
-  const renderedImage = await rasterizeSvgToImage(svg, quality);
-  return createRasterVectorEmbossGeometries(
-    renderedImage,
-    artworkBounds,
-    lidPanelGeometries,
-    quality,
-    style
-  );
+  const profile = getExportProfile(quality);
+  const viewBox = getSvgViewBox(svg);
+  const loader = new SVGLoader();
+  const svgData = loader.parse(svg);
+
+  // Compute how SVG coordinates map to artwork world coordinates
+  const artworkWidth = artworkBounds.maxX - artworkBounds.minX;
+  const artworkHeight = artworkBounds.maxY - artworkBounds.minY;
+  const svgToWorldX = artworkWidth / viewBox.width;
+  const svgToWorldY = artworkHeight / viewBox.height;
+
+  const geometries: ExportPart[] = [];
+
+  // Collect all non-background shapes in SVG order (back-to-front).
+  // In vtracer's "stacked" mode, later paths sit ON TOP of earlier paths,
+  // meaning earlier paths cover the entire area under them.
+  const shapeCandidates: ShapeCandidate[] = [];
+
+  for (const path of svgData.paths) {
+    if (shouldSkipSvgPath(path)) {
+      continue;
+    }
+
+    const isBackground = isLikelyBackgroundColor(path.color, true);
+    if (isBackground) continue;
+
+    const shapes = SVGLoader.createShapes(path);
+    if (shapes.length === 0) continue;
+
+    for (const shape of shapes) {
+      const points = shape.getPoints(profile.curveSegments * 2);
+      const bounds = getPointsBounds(points);
+
+      if (
+        bounds.getSize(new THREE.Vector2()).x *
+          bounds.getSize(new THREE.Vector2()).y <
+        profile.minPathPixelArea
+      ) {
+        continue;
+      }
+
+      shapeCandidates.push({
+        bounds,
+        color: logoColor
+          ? new THREE.Color(logoColor).getHex()
+          : quantizeExportColor(path.color),
+        points,
+        shape,
+      });
+    }
+  }
+
+  if (shapeCandidates.length === 0) {
+    return geometries;
+  }
+
+  const depth = getArtworkDepth(style);
+
+  for (const panel of lidPanelGeometries) {
+    const baseZ = getArtworkBaseZ(panel, style);
+
+    for (const candidate of shapeCandidates) {
+      const geometry = new THREE.ExtrudeGeometry(candidate.shape, {
+        depth,
+        bevelEnabled: false,
+        curveSegments: profile.curveSegments,
+        steps: 1,
+      });
+
+      geometry.computeBoundingBox();
+      const bounds = geometry.boundingBox;
+      const pixelWidth = bounds ? bounds.max.x - bounds.min.x : 0;
+      const pixelHeight = bounds ? bounds.max.y - bounds.min.y : 0;
+
+      if (
+        pixelWidth * pixelHeight < profile.minPathPixelArea ||
+        pixelWidth * svgToWorldX < profile.minPathWorldSize ||
+        pixelHeight * svgToWorldY < profile.minPathWorldSize
+      ) {
+        geometry.dispose();
+        continue;
+      }
+
+      geometry.deleteAttribute("uv");
+      geometry.translate(-viewBox.minX, -viewBox.minY, 0);
+      geometry.scale(svgToWorldX, -svgToWorldY, 1);
+      geometry.translate(artworkBounds.minX, artworkBounds.maxY, baseZ);
+
+      const simplified = maybeSimplifyGeometry(geometry, profile);
+      geometry.dispose();
+
+      if (!validateExportGeometry(simplified)) {
+        simplified.dispose();
+        continue;
+      }
+
+      geometries.push({
+        color: candidate.color,
+        geometry: simplified,
+        name: "emboss",
+      });
+    }
+
+    break;
+  }
+
+  return geometries;
 }
 
 async function createRasterVectorEmbossGeometries(
@@ -693,7 +739,9 @@ async function createRasterVectorEmbossGeometries(
   artworkBounds: ReturnType<typeof getArtworkBounds>,
   lidPanelGeometries: LidPanelGeometry[],
   quality: ExportQuality,
-  style: ArtworkStyle
+  style: ArtworkStyle,
+  backgroundMode: ResolvedLogoBackgroundMode,
+  logoColor: string | null
 ) {
   const profile = getExportProfile(quality);
   const slices = getContinuousPanelArtworkSlices(
@@ -741,13 +789,14 @@ async function createRasterVectorEmbossGeometries(
       sourceHeight
     );
 
-    const tracedSliceSvg = traceImageDataToSvg(
+    const tracedSlice = await traceImageDataToSvg(
       sliceContext.getImageData(0, 0, sourceWidth, sourceHeight),
-      profile
+      quality,
+      backgroundMode
     );
     const loader = new SVGLoader();
-    const svgData = loader.parse(tracedSliceSvg);
-    const sliceViewBox = getSvgViewBox(tracedSliceSvg);
+    const svgData = loader.parse(tracedSlice.svg);
+    const sliceViewBox = getSvgViewBox(tracedSlice.svg);
     const scaleX = slice.overlapWidth / sliceViewBox.width;
     const scaleY = slice.overlapHeight / sliceViewBox.height;
     const baseZ = getArtworkBaseZ(slice.panel, style);
@@ -759,7 +808,10 @@ async function createRasterVectorEmbossGeometries(
         continue;
       }
 
-      const isBackgroundPath = isLikelyBackgroundColor(path.color);
+      const isBackgroundPath = isLikelyBackgroundColor(
+        path.color,
+        tracedSlice.shouldFilterBackground
+      );
       const sourcePaths = path.subPaths;
 
       if (isBackgroundPath) {

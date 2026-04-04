@@ -12,6 +12,55 @@ import {
 import { CASE_MODELS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 
+function loadImageSource(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to load preview image"));
+    image.src = src;
+  });
+}
+
+async function loadLogoPreviewImage(logo: {
+  dataUrl: string | null;
+  rasterSourceDataUrl: string | null;
+  vectorSvg: string | null;
+  color: string | null;
+}) {
+  // For direct SVG uploads (no raster source), use the vectorSvg with color injection
+  if (logo.vectorSvg && !logo.rasterSourceDataUrl) {
+    let svgContent = logo.vectorSvg;
+    if (logo.color) {
+      const styleInjection = `<style>path:not([fill="#FFFFFF"]):not([fill="#ffffff"]):not([fill="none"]) { fill: ${logo.color} !important; }</style>`;
+      svgContent = svgContent.replace(/<svg[^>]*>/i, (match) => `${match}${styleInjection}`);
+    }
+
+    const objectUrl = URL.createObjectURL(
+      new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" })
+    );
+
+    try {
+      return await loadImageSource(objectUrl);
+    } catch (error) {
+      if (logo.dataUrl) {
+        return loadImageSource(logo.dataUrl);
+      }
+
+      throw error;
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  // For raster-sourced logos (PNG/JPG), use the processed preview image
+  // which preserves original colors with background removed
+  if (logo.dataUrl) {
+    return loadImageSource(logo.dataUrl);
+  }
+
+  return null;
+}
+
 export default function DeckCaseModel() {
   const meshRef = useRef<THREE.Mesh>(null!);
   const rawGeometries = useLoader(STLLoader, [
@@ -25,6 +74,7 @@ export default function DeckCaseModel() {
   const bottomColor = useDesignStore((s) => s.bottomColor);
   const logo = useDesignStore((s) => s.logo);
   const artworkStyle = useDesignStore((s) => s.artworkStyle);
+  const { dataUrl, rasterSourceDataUrl, vectorSvg, color } = logo;
 
   const preparedModels = useMemo(
     () => ({
@@ -61,41 +111,52 @@ export default function DeckCaseModel() {
   );
 
   useEffect(() => {
-    if (!logo.dataUrl) return;
-
     let isCancelled = false;
-    const loader = new THREE.TextureLoader();
 
-    loader.load(
-      logo.dataUrl,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-
-        if (isCancelled) {
-          texture.dispose();
-          return;
-        }
-
-        setLogoTexture((current) => {
-          current?.dispose();
-          return texture;
-        });
-      },
-      undefined,
-      () => {
+    if (!vectorSvg && !dataUrl) {
+      Promise.resolve().then(() => {
         if (!isCancelled) {
           setLogoTexture((current) => {
             current?.dispose();
             return null;
           });
         }
-      }
-    );
+      });
+    } else {
+      loadLogoPreviewImage({ dataUrl, rasterSourceDataUrl, vectorSvg, color })
+        .then((image) => {
+          if (!image) {
+            throw new Error("Missing preview source");
+          }
+
+          const texture = new THREE.Texture(image);
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.needsUpdate = true;
+
+          if (isCancelled) {
+            texture.dispose();
+            return;
+          }
+
+          setLogoTexture((current) => {
+            current?.dispose();
+            return texture;
+          });
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setLogoTexture((current) => {
+              current?.dispose();
+              return null;
+            });
+          }
+        });
+    }
 
     return () => {
       isCancelled = true;
     };
-  }, [logo.dataUrl]);
+  }, [dataUrl, rasterSourceDataUrl, vectorSvg, color]);
 
   const artworkBounds = useMemo(() => {
     return getArtworkBounds(logo, topLidBounds);
@@ -103,7 +164,6 @@ export default function DeckCaseModel() {
 
   const panelImageOverlays = useMemo(() => {
     if (
-      !logo.dataUrl ||
       !logoTexture ||
       !logoTexture.image ||
       !artworkBounds.width ||
@@ -181,7 +241,7 @@ export default function DeckCaseModel() {
         };
       })
       .filter((overlay): overlay is NonNullable<typeof overlay> => overlay !== null);
-  }, [artworkBounds, artworkStyle, lidPanelGeometries, logo.dataUrl, logoTexture]);
+  }, [artworkBounds, artworkStyle, lidPanelGeometries, logoTexture]);
 
   useEffect(() => {
     return () => {
