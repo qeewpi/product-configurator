@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import Configurator from "@/components/Configurator";
 import { useDesignStore } from "@/lib/store";
@@ -43,9 +44,9 @@ export default function DesignPage() {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-zinc-50 gap-4">
         <p className="text-zinc-500">{error}</p>
-        <a href="/" className="text-sm text-zinc-700 underline">
+        <Link href="/" className="text-sm text-zinc-700 underline">
           Create a new design
-        </a>
+        </Link>
       </div>
     );
   }

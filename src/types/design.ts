@@ -1,5 +1,6 @@
 export type ExportQuality = "fast" | "balanced" | "detailed";
 export type ArtworkStyle = "flat" | "emboss";
+export type CaseModelId = "compact-3-lid" | "rugged";
 
 export interface LogoConfig {
   dataUrl: string | null;
@@ -12,6 +13,7 @@ export interface LogoConfig {
 
 export interface DesignConfig {
   id?: string;
+  model: CaseModelId;
   panelColors: [string, string, string];
   bottomColor: string;
   exportQuality: ExportQuality;

@@ -4,44 +4,60 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLoader } from "@react-three/fiber";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { prepareCaseModel } from "@/lib/case-models";
 import {
   getArtworkBounds,
   getContinuousPanelArtworkSlices,
-  prepareDeckCaseGeometry,
 } from "@/lib/deck-case-artwork";
+import { CASE_MODELS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 
 export default function DeckCaseModel() {
   const meshRef = useRef<THREE.Mesh>(null!);
-  const rawGeometry = useLoader(STLLoader, "/models/Plain.stl");
+  const rawGeometries = useLoader(STLLoader, [
+    ...CASE_MODELS["compact-3-lid"].assetPaths,
+    ...CASE_MODELS.rugged.assetPaths,
+  ]);
   const [logoTexture, setLogoTexture] = useState<THREE.Texture | null>(null);
 
+  const model = useDesignStore((s) => s.model);
   const panelColors = useDesignStore((s) => s.panelColors);
   const bottomColor = useDesignStore((s) => s.bottomColor);
   const logo = useDesignStore((s) => s.logo);
   const artworkStyle = useDesignStore((s) => s.artworkStyle);
 
-  const preparedModel = useMemo(() => prepareDeckCaseGeometry(rawGeometry), [rawGeometry]);
+  const preparedModels = useMemo(
+    () => ({
+      "compact-3-lid": prepareCaseModel("compact-3-lid", [rawGeometries[0]]),
+      rugged: prepareCaseModel("rugged", [rawGeometries[1], rawGeometries[2]]),
+    }),
+    [rawGeometries]
+  );
+  const preparedModel = preparedModels[model];
   const { regionGeometry, lidPanelGeometries, topLidBounds } = preparedModel;
 
-  // 4 materials: 3 lid panels + 1 bottom tray
   const materials = useMemo(
-    () => [
-      ...panelColors.map(
-        (color) =>
-          new THREE.MeshStandardMaterial({
-            color,
-            roughness: 0.4,
-            metalness: 0.1,
-          })
-      ),
-      new THREE.MeshStandardMaterial({
-        color: bottomColor,
-        roughness: 0.4,
-        metalness: 0.1,
-      }),
-    ],
-    [panelColors, bottomColor]
+    () => {
+      const lidColors =
+        model === "rugged" ? [panelColors[0]] : panelColors;
+
+      return [
+        ...lidColors.map(
+          (color) =>
+            new THREE.MeshStandardMaterial({
+              color,
+              roughness: 0.4,
+              metalness: 0.1,
+            })
+        ),
+        new THREE.MeshStandardMaterial({
+          color: bottomColor,
+          roughness: 0.4,
+          metalness: 0.1,
+        }),
+      ];
+    },
+    [bottomColor, model, panelColors]
   );
 
   useEffect(() => {

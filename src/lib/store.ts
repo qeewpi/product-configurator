@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   ArtworkStyle,
+  CaseModelId,
   DesignConfig,
   ExportQuality,
   LogoConfig,
@@ -9,6 +10,7 @@ import type {
 const LOGO_VERTICAL_CENTER_OFFSET = -40;
 
 interface DesignStore extends DesignConfig {
+  setModel: (model: CaseModelId) => void;
   setRegionColor: (index: 0 | 1 | 2, color: string) => void;
   setBottomColor: (color: string) => void;
   setExportQuality: (quality: ExportQuality) => void;
@@ -21,6 +23,7 @@ interface DesignStore extends DesignConfig {
 }
 
 const DEFAULT_STATE: DesignConfig = {
+  model: "compact-3-lid",
   panelColors: ["#DC2626", "#2563EB", "#16A34A"],
   bottomColor: "#1A1A1A",
   exportQuality: "balanced",
@@ -37,6 +40,8 @@ const DEFAULT_STATE: DesignConfig = {
 
 export const useDesignStore = create<DesignStore>((set, get) => ({
   ...DEFAULT_STATE,
+
+  setModel: (model) => set({ model }),
 
   setRegionColor: (index, color) =>
     set((state) => {
@@ -70,6 +75,7 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
 
   serialize: () => {
     const {
+      model,
       panelColors,
       bottomColor,
       exportQuality,
@@ -79,14 +85,15 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
       createdAt,
       updatedAt,
     } = get();
-      return {
-        panelColors,
-        bottomColor,
-        exportQuality,
-        artworkStyle,
-        logo,
-        id,
-        createdAt,
+    return {
+      model,
+      panelColors,
+      bottomColor,
+      exportQuality,
+      artworkStyle,
+      logo,
+      id,
+      createdAt,
       updatedAt,
     };
   },
@@ -94,6 +101,7 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
   hydrate: (config) =>
     set((state) => ({
       ...config,
+      model: config.model ?? state.model,
       exportQuality: config.exportQuality ?? state.exportQuality,
       artworkStyle: config.artworkStyle ?? state.artworkStyle,
       logo: {

@@ -9,32 +9,30 @@ import {
   type SVGResultPaths,
 } from "three/examples/jsm/loaders/SVGLoader.js";
 import { SimplifyModifier } from "three/examples/jsm/modifiers/SimplifyModifier.js";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { getCaseModelAssetPaths, prepareCaseModel } from "@/lib/case-models";
 import type {
   ArtworkStyle,
+  CaseModelId,
   DesignConfig,
   ExportQuality,
 } from "@/types/design";
 import {
   getArtworkBounds,
   getContinuousPanelArtworkSlices,
-  getPanelArtworkSlices,
   type LidPanelGeometry,
   type TopLidBounds,
-  prepareDeckCaseGeometry,
 } from "@/lib/deck-case-artwork";
 import { FILAMENT_PALETTE } from "@/lib/filaments";
 
-const MODEL_PATH = "/models/Plain.stl";
 const EXPORT_FILENAME = "deck-case-design.3mf";
-const MAX_MASK_RESOLUTION = 96;
-const MIN_ALPHA_THRESHOLD = 32;
+
 const EMBOSS_HEIGHT = 0.6;
 const EMBOSS_WELD_DEPTH = 0.12;
 // Keep flat artwork thick enough to survive common 0.2mm slicing without
 // losing thin counters or interior separations in letters and line art.
 const FLAT_ARTWORK_DEPTH = 0.4;
-const DEFAULT_EMBOSS_COLOR = 0x222222;
+
 const MAX_EXPORT_COLORS = 8;
 const LINE_ART_MIN_ALPHA = 16;
 const BACKGROUND_LUMINANCE_THRESHOLD = 242;
@@ -184,11 +182,14 @@ const EXPORT_PROFILES: Record<ExportQuality, ExportProfile> = {
   },
 };
 
-let preparedModelPromise: Promise<{
-  regionGeometry: THREE.BufferGeometry;
-  lidPanelGeometries: LidPanelGeometry[];
-  topLidBounds: TopLidBounds;
-}> | null = null;
+const preparedModelPromises = new Map<
+  CaseModelId,
+  Promise<{
+    regionGeometry: THREE.BufferGeometry;
+    lidPanelGeometries: LidPanelGeometry[];
+    topLidBounds: TopLidBounds;
+  }>
+>();
 
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -199,24 +200,30 @@ function loadImage(src: string) {
   });
 }
 
-async function getPreparedModel() {
-  if (!preparedModelPromise) {
-    preparedModelPromise = fetch(MODEL_PATH)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Failed to load base STL model");
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        const rawGeometry = new STLLoader().parse(arrayBuffer);
-        return prepareDeckCaseGeometry(rawGeometry);
-      })
-      .catch((error) => {
-        preparedModelPromise = null;
-        throw error;
-      });
+async function getPreparedModel(model: CaseModelId) {
+  const existingPreparedModel = preparedModelPromises.get(model);
+  if (existingPreparedModel) {
+    return existingPreparedModel;
   }
 
+  const preparedModelPromise = Promise.all(
+    getCaseModelAssetPaths(model).map(async (assetPath) => {
+      const response = await fetch(assetPath);
+      if (!response.ok) {
+        throw new Error("Failed to load base STL model");
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return new STLLoader().parse(arrayBuffer);
+    })
+  )
+    .then((geometries) => prepareCaseModel(model, geometries))
+    .catch((error) => {
+      preparedModelPromises.delete(model);
+      throw error;
+    });
+
+  preparedModelPromises.set(model, preparedModelPromise);
   return preparedModelPromise;
 }
 
@@ -237,111 +244,9 @@ function setHighQualitySmoothing(
   }
 }
 
-function createEmbossRowGeometry(
-  startColumn: number,
-  endColumn: number,
-  row: number,
-  slice: ReturnType<typeof getPanelArtworkSlices>[number],
-  columns: number,
-  rows: number,
-  style: ArtworkStyle
-) {
-  const cellWidth = slice.overlapWidth / columns;
-  const cellHeight = slice.overlapHeight / rows;
-  const boxWidth = (endColumn - startColumn) * cellWidth;
-  const centerX =
-    slice.overlapMinX + startColumn * cellWidth + boxWidth / 2;
-  const centerY =
-    slice.overlapMaxY - row * cellHeight - cellHeight / 2;
-  const depth = getArtworkDepth(style);
-  const centerZ = getArtworkBaseZ(slice.panel, style) + depth / 2;
-
-  const geometry = new THREE.BoxGeometry(boxWidth, cellHeight, depth);
-  geometry.translate(centerX, centerY, centerZ);
-  return normalizeGeometryForMerge(geometry);
-}
-
-function createEmbossGeometryFromSlice(
-  slice: ReturnType<typeof getPanelArtworkSlices>[number],
-  image: HTMLImageElement,
-  style: ArtworkStyle
-) {
-  const columns = Math.max(
-    1,
-    Math.round(
-      (slice.sourceCropWidth / image.naturalWidth) * MAX_MASK_RESOLUTION
-    )
-  );
-  const rows = Math.max(
-    1,
-    Math.round(
-      (slice.sourceCropHeight / image.naturalHeight) * MAX_MASK_RESOLUTION
-    )
-  );
-
-  const canvas = document.createElement("canvas");
-  canvas.width = columns;
-  canvas.height = rows;
-
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) {
-    throw new Error("Failed to prepare emboss texture");
-  }
-
-  context.clearRect(0, 0, columns, rows);
-  context.drawImage(
-    image,
-    slice.sourceX,
-    slice.sourceY,
-    slice.sourceCropWidth,
-    slice.sourceCropHeight,
-    0,
-    0,
-    columns,
-    rows
-  );
-
-  const imageData = context.getImageData(0, 0, columns, rows);
-  const geometries: ExportPart[] = [];
-
-  for (let row = 0; row < rows; row++) {
-    let runStart = -1;
-
-    for (let column = 0; column <= columns; column++) {
-      const pixelIndex = (row * columns + column) * 4;
-      const isOpaque =
-        column < columns && imageData.data[pixelIndex + 3] >= MIN_ALPHA_THRESHOLD;
-
-      if (isOpaque && runStart === -1) {
-        runStart = column;
-      }
-
-      if (!isOpaque && runStart !== -1) {
-        geometries.push(
-            {
-              color: DEFAULT_EMBOSS_COLOR,
-              geometry: createEmbossRowGeometry(
-                runStart,
-                column,
-                row,
-                slice,
-                columns,
-                rows,
-                style
-              ),
-              name: "emboss_slice",
-            }
-        );
-        runStart = -1;
-      }
-    }
-  }
-
-  return geometries;
-}
 
 async function createEmbossGeometries(config: DesignConfig) {
-  const { lidPanelGeometries, topLidBounds } = await getPreparedModel();
+  const { lidPanelGeometries, topLidBounds } = await getPreparedModel(config.model);
   const artworkBounds = getArtworkBounds(config.logo, topLidBounds);
 
   if (isSvgLogo(config) && config.logo.vectorSvg) {
@@ -400,21 +305,7 @@ async function createEmbossGeometries(config: DesignConfig) {
     }
   }
 
-  if (!config.logo.dataUrl) {
-    return [];
-  }
-
-  const image = await loadImage(config.logo.dataUrl);
-  const slices = getContinuousPanelArtworkSlices(
-    lidPanelGeometries,
-    artworkBounds,
-    image.naturalWidth,
-    image.naturalHeight
-  );
-
-  return slices.flatMap((slice) =>
-    createEmbossGeometryFromSlice(slice, image, config.artworkStyle)
-  );
+  return [];
 }
 
 function getSvgViewBox(svg: string) {
@@ -623,15 +514,18 @@ function collectMergedEmbossParts(parts: ExportPart[]) {
 
     const normalized = normalizeGeometryForMerge(mergedGeometry);
     mergedGeometry.dispose();
+    const welded = mergeVertices(normalized, 1e-4);
+    normalized.dispose();
+    welded.computeVertexNormals();
 
-    if (!validateExportGeometry(normalized)) {
-      normalized.dispose();
+    if (!validateExportGeometry(welded)) {
+      welded.dispose();
       continue;
     }
 
     mergedParts.push({
       color,
-      geometry: normalized,
+      geometry: welded,
       name: "emboss_merged",
     });
   }
@@ -1027,8 +921,11 @@ async function save3mf(blob: Blob, fileName: string) {
 }
 
 export async function exportDesignAsStl(config: DesignConfig) {
-  const { regionGeometry } = await getPreparedModel();
-  const baseGeometry = normalizeGeometryForMerge(regionGeometry);
+  const { regionGeometry } = await getPreparedModel(config.model);
+  const baseNormalized = normalizeGeometryForMerge(regionGeometry);
+  const baseGeometry = mergeVertices(baseNormalized, 1e-4);
+  baseNormalized.dispose();
+  baseGeometry.computeVertexNormals();
   const embossParts = collectMergedEmbossParts(await createEmbossGeometries(config));
   logExportStats(config, baseGeometry, embossParts);
   const exportGroup = new THREE.Group();

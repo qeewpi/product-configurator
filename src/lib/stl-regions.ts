@@ -3,7 +3,7 @@ import * as THREE from "three";
 const TOP_LID_PART_COUNT = 3;
 type GeometryAttribute = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
 
-type FaceComponent = {
+export type FaceComponent = {
   faceIndices: number[];
   centroidX: number;
   centroidY: number;
@@ -92,6 +92,13 @@ function buildFaceComponents(
   }
 
   return components;
+}
+
+export function getFaceComponents(geometry: THREE.BufferGeometry) {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry;
+  const position = source.getAttribute("position");
+  const faceCount = position.count / 3;
+  return buildFaceComponents(position, faceCount);
 }
 
 function getFaceRegions(position: GeometryAttribute, faceCount: number) {
@@ -200,4 +207,50 @@ export function prepareRegionGeometry(
   newGeometry.computeBoundingSphere();
 
   return newGeometry;
+}
+
+export function extractFaceComponentGeometry(
+  geometry: THREE.BufferGeometry,
+  faceIndices: number[]
+) {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry;
+  const position = source.getAttribute("position");
+  const normal = source.getAttribute("normal");
+  const newPositions = new Float32Array(faceIndices.length * 9);
+  const newNormals = normal ? new Float32Array(faceIndices.length * 9) : null;
+
+  faceIndices.forEach((faceIndex, componentIndex) => {
+    const srcBase = faceIndex * 3;
+    const dstBase = componentIndex * 9;
+
+    for (let vertexOffset = 0; vertexOffset < 3; vertexOffset++) {
+      const srcIndex = srcBase + vertexOffset;
+      const dstIndex = dstBase + vertexOffset * 3;
+      newPositions[dstIndex] = position.getX(srcIndex);
+      newPositions[dstIndex + 1] = position.getY(srcIndex);
+      newPositions[dstIndex + 2] = position.getZ(srcIndex);
+
+      if (newNormals) {
+        newNormals[dstIndex] = normal!.getX(srcIndex);
+        newNormals[dstIndex + 1] = normal!.getY(srcIndex);
+        newNormals[dstIndex + 2] = normal!.getZ(srcIndex);
+      }
+    }
+  });
+
+  const componentGeometry = new THREE.BufferGeometry();
+  componentGeometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(newPositions, 3)
+  );
+
+  if (newNormals) {
+    componentGeometry.setAttribute("normal", new THREE.BufferAttribute(newNormals, 3));
+  } else {
+    componentGeometry.computeVertexNormals();
+  }
+
+  componentGeometry.computeBoundingBox();
+  componentGeometry.computeBoundingSphere();
+  return componentGeometry;
 }

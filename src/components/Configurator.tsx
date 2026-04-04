@@ -6,6 +6,7 @@ import ColorPanel from "./controls/ColorPanel";
 import LogoUpload from "./controls/LogoUpload";
 import LogoControls from "./controls/LogoControls";
 import ShareModal from "./controls/ShareModal";
+import { CASE_MODEL_OPTIONS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 import { exportDesignAsStl } from "@/lib/stl-export";
 import type { ExportQuality } from "@/types/design";
@@ -40,6 +41,8 @@ export default function Configurator() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const serialize = useDesignStore((s) => s.serialize);
+  const model = useDesignStore((s) => s.model);
+  const setModel = useDesignStore((s) => s.setModel);
   const exportQuality = useDesignStore((s) => s.exportQuality);
   const setExportQuality = useDesignStore((s) => s.setExportQuality);
 
@@ -100,8 +103,42 @@ export default function Configurator() {
                 </div>
               </section>
 
+              <section className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+                    Model
+                  </h3>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Choose which case body to customize and export.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {CASE_MODEL_OPTIONS.map((option) => (
+                    <label
+                      key={option.id}
+                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 px-3 py-3 transition-colors hover:border-zinc-300"
+                    >
+                      <input
+                        type="radio"
+                        name="case-model"
+                        value={option.id}
+                        checked={model === option.id}
+                        onChange={() => setModel(option.id)}
+                        className="mt-1 h-4 w-4 border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-zinc-900">
+                          {option.label}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
               <section>
-                <ColorPanel />
+                <ColorPanel key={model} />
               </section>
 
               <section className="space-y-6">

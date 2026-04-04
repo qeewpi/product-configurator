@@ -1,29 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import { CASE_MODELS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 import { FILAMENT_PALETTE } from "@/lib/filaments";
-
-const SECTIONS = [
-  { key: "panel-0", label: "Left Panel", region: 0 as const },
-  { key: "panel-1", label: "Center Panel", region: 1 as const },
-  { key: "panel-2", label: "Right Panel", region: 2 as const },
-  { key: "bottom", label: "Bottom Tray", region: "bottom" as const },
-];
 
 export default function ColorPanel() {
   const [expanded, setExpanded] = useState<string | null>("panel-0");
 
+  const model = useDesignStore((s) => s.model);
   const panelColors = useDesignStore((s) => s.panelColors);
   const bottomColor = useDesignStore((s) => s.bottomColor);
   const setRegionColor = useDesignStore((s) => s.setRegionColor);
   const setBottomColor = useDesignStore((s) => s.setBottomColor);
+  const sections = CASE_MODELS[model].colorSections;
 
-  const getColor = (section: (typeof SECTIONS)[number]) =>
+  const getColor = (section: (typeof sections)[number]) =>
     section.region === "bottom" ? bottomColor : panelColors[section.region];
 
   const handleColorSelect = (
-    section: (typeof SECTIONS)[number],
+    section: (typeof sections)[number],
     hex: string
   ) => {
     if (section.region === "bottom") {
@@ -39,7 +35,7 @@ export default function ColorPanel() {
         Colors
       </h3>
 
-      {SECTIONS.map((section) => {
+      {sections.map((section) => {
         const isOpen = expanded === section.key;
         const currentColor = getColor(section);
 
