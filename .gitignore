@@ -52,6 +52,7 @@ server.log
 # AI Agents
 .claude
 AGENTS.md
+CLAUDE.md
 .agents/
 .agent/
 _agents/
