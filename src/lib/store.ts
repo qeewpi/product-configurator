@@ -13,6 +13,7 @@ interface DesignStore extends DesignConfig {
   setModel: (model: CaseModelId) => void;
   setRegionColor: (index: 0 | 1 | 2, color: string) => void;
   setBottomColor: (color: string) => void;
+  setClipsColor: (color: string) => void;
   setExportQuality: (quality: ExportQuality) => void;
   setArtworkStyle: (style: ArtworkStyle) => void;
   setLogo: (logo: Partial<LogoConfig>) => void;
@@ -26,6 +27,7 @@ const DEFAULT_STATE: DesignConfig = {
   model: "compact-3-lid",
   panelColors: ["#DC2626", "#2563EB", "#16A34A"],
   bottomColor: "#1A1A1A",
+  clipsColor: "#1A1A1A",
   exportQuality: "balanced",
   artworkStyle: "flat",
   logo: {
@@ -55,6 +57,8 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
     }),
 
   setBottomColor: (color) => set({ bottomColor: color }),
+
+  setClipsColor: (color) => set({ clipsColor: color }),
 
   setExportQuality: (exportQuality) => set({ exportQuality }),
 
@@ -86,6 +90,7 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
       model,
       panelColors,
       bottomColor,
+      clipsColor,
       exportQuality,
       artworkStyle,
       logo,
@@ -97,6 +102,7 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
       model,
       panelColors,
       bottomColor,
+      clipsColor,
       exportQuality,
       artworkStyle,
       logo,
@@ -109,6 +115,8 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
   hydrate: (config) =>
     set((state) => ({
       ...config,
+      clipsColor:
+        config.clipsColor ?? config.bottomColor ?? state.bottomColor,
       model: config.model ?? state.model,
       exportQuality: config.exportQuality ?? state.exportQuality,
       artworkStyle: config.artworkStyle ?? state.artworkStyle,

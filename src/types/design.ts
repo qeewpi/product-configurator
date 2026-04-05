@@ -21,6 +21,7 @@ export interface DesignConfig {
   model: CaseModelId;
   panelColors: [string, string, string];
   bottomColor: string;
+  clipsColor: string;
   exportQuality: ExportQuality;
   artworkStyle: ArtworkStyle;
   logo: LogoConfig;

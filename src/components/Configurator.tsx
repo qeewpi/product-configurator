@@ -8,7 +8,7 @@ import LogoControls from "./controls/LogoControls";
 import ShareModal from "./controls/ShareModal";
 import { CASE_MODEL_OPTIONS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
-import { exportDesignAsStl } from "@/lib/stl-export";
+import { exportDesignAs3MF } from "@/lib/stl-export";
 import type { ExportQuality } from "@/types/design";
 
 const Scene = dynamic(() => import("./viewer/Scene"), { ssr: false });
@@ -65,15 +65,15 @@ export default function Configurator() {
     }
   };
 
-  const handleExportStl = async () => {
+  const handleExport3MF = async () => {
     setExporting(true);
     setExportError(null);
 
     try {
-      await exportDesignAsStl(serialize());
+      await exportDesignAs3MF(serialize());
     } catch (error) {
       setExportError(
-        error instanceof Error ? error.message : "Failed to export STL"
+        error instanceof Error ? error.message : "Failed to export 3MF"
       );
     } finally {
       setExporting(false);
@@ -149,7 +149,7 @@ export default function Configurator() {
               <section className="space-y-3">
                 <div>
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
-                    STL Export Quality
+                    3MF Export Quality
                   </h3>
                   <p className="mt-1 text-xs text-zinc-500">
                     Lower quality exports faster and keeps the file size smaller.
@@ -196,11 +196,11 @@ export default function Configurator() {
 
             <button
               type="button"
-              onClick={handleExportStl}
+              onClick={handleExport3MF}
               disabled={saving || exporting}
               className="w-full rounded-xl border border-zinc-300 px-4 py-3 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 disabled:opacity-50"
             >
-              {exporting ? "Exporting STL..." : "Export STL"}
+              {exporting ? "Exporting 3MF..." : "Export 3MF"}
             </button>
 
             <button

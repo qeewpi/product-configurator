@@ -1,12 +1,17 @@
 import * as THREE from "three";
 
-const TOP_LID_PART_COUNT = 3;
 type GeometryAttribute = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
 
-export type FaceComponent = {
+export type ConnectedComponent = {
   faceIndices: number[];
-  centroidX: number;
-  centroidY: number;
+  faceCount: number;
+  centroid: THREE.Vector3;
+  bounds: THREE.Box3;
+  extentX: number;
+  extentY: number;
+  extentZ: number;
+  maxExtent: number;
+  footprintArea: number;
 };
 
 function getVertexKey(position: GeometryAttribute, index: number) {
@@ -15,10 +20,10 @@ function getVertexKey(position: GeometryAttribute, index: number) {
     .toFixed(6)},${position.getZ(index).toFixed(6)}`;
 }
 
-function buildFaceComponents(
+function buildConnectedComponents(
   position: GeometryAttribute,
   faceCount: number
-): FaceComponent[] {
+): ConnectedComponent[] {
   const vertexToFaces = new Map<string, number[]>();
 
   for (let faceIndex = 0; faceIndex < faceCount; faceIndex++) {
@@ -46,7 +51,7 @@ function buildFaceComponents(
   }
 
   const visited = new Uint8Array(faceCount);
-  const components: FaceComponent[] = [];
+  const components: ConnectedComponent[] = [];
 
   for (let startFace = 0; startFace < faceCount; startFace++) {
     if (visited[startFace]) continue;
@@ -57,6 +62,9 @@ function buildFaceComponents(
     const faceIndices: number[] = [];
     let sumX = 0;
     let sumY = 0;
+    let sumZ = 0;
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
 
     while (stack.length > 0) {
       const faceIndex = stack.pop()!;
@@ -73,8 +81,24 @@ function buildFaceComponents(
           position.getY(baseIdx + 1) +
           position.getY(baseIdx + 2)) /
         3;
+      const centroidZ =
+        (position.getZ(baseIdx) +
+          position.getZ(baseIdx + 1) +
+          position.getZ(baseIdx + 2)) /
+        3;
       sumX += centroidX;
       sumY += centroidY;
+      sumZ += centroidZ;
+
+      for (let vertexOffset = 0; vertexOffset < 3; vertexOffset++) {
+        const vertexIndex = baseIdx + vertexOffset;
+        min.x = Math.min(min.x, position.getX(vertexIndex));
+        min.y = Math.min(min.y, position.getY(vertexIndex));
+        min.z = Math.min(min.z, position.getZ(vertexIndex));
+        max.x = Math.max(max.x, position.getX(vertexIndex));
+        max.y = Math.max(max.y, position.getY(vertexIndex));
+        max.z = Math.max(max.z, position.getZ(vertexIndex));
+      }
 
       for (const neighbor of adjacency[faceIndex]) {
         if (!visited[neighbor]) {
@@ -84,132 +108,39 @@ function buildFaceComponents(
       }
     }
 
+    const bounds = new THREE.Box3(min, max);
+    const extentX = max.x - min.x;
+    const extentY = max.y - min.y;
+    const extentZ = max.z - min.z;
+
     components.push({
       faceIndices,
-      centroidX: sumX / faceIndices.length,
-      centroidY: sumY / faceIndices.length,
+      faceCount: faceIndices.length,
+      centroid: new THREE.Vector3(
+        sumX / faceIndices.length,
+        sumY / faceIndices.length,
+        sumZ / faceIndices.length
+      ),
+      bounds,
+      extentX,
+      extentY,
+      extentZ,
+      maxExtent: Math.max(extentX, extentY, extentZ),
+      footprintArea: extentX * extentY,
     });
   }
 
   return components;
 }
 
-export function getFaceComponents(geometry: THREE.BufferGeometry) {
+export function getConnectedComponents(geometry: THREE.BufferGeometry) {
   const source = geometry.index ? geometry.toNonIndexed() : geometry;
   const position = source.getAttribute("position");
   const faceCount = position.count / 3;
-  return buildFaceComponents(position, faceCount);
+  return buildConnectedComponents(position, faceCount);
 }
 
-function getFaceRegions(position: GeometryAttribute, faceCount: number) {
-  const components = buildFaceComponents(position, faceCount);
-
-  if (components.length < TOP_LID_PART_COUNT + 1) {
-    throw new Error(
-      `Expected at least ${TOP_LID_PART_COUNT + 1} model parts, found ${
-        components.length
-      }`
-    );
-  }
-
-  const topLidComponents = [...components]
-    .sort((a, b) => b.centroidY - a.centroidY)
-    .slice(0, TOP_LID_PART_COUNT)
-    .sort((a, b) => a.centroidX - b.centroidX);
-
-  const componentToRegion = new Map<FaceComponent, number>();
-  for (const [region, component] of topLidComponents.entries()) {
-    componentToRegion.set(component, region);
-  }
-
-  for (const component of components) {
-    if (!componentToRegion.has(component)) {
-      componentToRegion.set(component, 3);
-    }
-  }
-
-  const regions = new Array<number>(faceCount);
-  for (const component of components) {
-    const region = componentToRegion.get(component)!;
-    for (const faceIndex of component.faceIndices) {
-      regions[faceIndex] = region;
-    }
-  }
-
-  return regions;
-}
-
-export function prepareRegionGeometry(
-  geometry: THREE.BufferGeometry
-): THREE.BufferGeometry {
-  const position = geometry.getAttribute("position");
-  const normal = geometry.getAttribute("normal");
-  const faceCount = position.count / 3;
-  const faceRegionsByIndex = getFaceRegions(position, faceCount);
-
-  // Classify each face
-  const faceRegions: { region: number; faceIndex: number }[] = [];
-  for (let i = 0; i < faceCount; i++) {
-    faceRegions.push({
-      region: faceRegionsByIndex[i],
-      faceIndex: i,
-    });
-  }
-
-  // Sort faces by region so they're contiguous
-  faceRegions.sort((a, b) => a.region - b.region);
-
-  // Build new reordered buffers
-  const newPositions = new Float32Array(position.count * 3);
-  const newNormals = new Float32Array(normal.count * 3);
-
-  for (let i = 0; i < faceRegions.length; i++) {
-    const srcBase = faceRegions[i].faceIndex * 3;
-    const dstBase = i * 3;
-
-    for (let v = 0; v < 3; v++) {
-      const srcIdx = srcBase + v;
-      const dstIdx = dstBase + v;
-      newPositions[dstIdx * 3] = position.getX(srcIdx);
-      newPositions[dstIdx * 3 + 1] = position.getY(srcIdx);
-      newPositions[dstIdx * 3 + 2] = position.getZ(srcIdx);
-      newNormals[dstIdx * 3] = normal.getX(srcIdx);
-      newNormals[dstIdx * 3 + 1] = normal.getY(srcIdx);
-      newNormals[dstIdx * 3 + 2] = normal.getZ(srcIdx);
-    }
-  }
-
-  const newGeometry = new THREE.BufferGeometry();
-  newGeometry.setAttribute(
-    "position",
-    new THREE.BufferAttribute(newPositions, 3)
-  );
-  newGeometry.setAttribute("normal", new THREE.BufferAttribute(newNormals, 3));
-
-  // Add groups for multi-material rendering (4 groups: 3 lid panels + 1 bottom)
-  let currentRegion = faceRegions[0].region;
-  let groupStart = 0;
-
-  for (let i = 1; i <= faceRegions.length; i++) {
-    const region = i < faceRegions.length ? faceRegions[i].region : -1;
-    if (region !== currentRegion) {
-      newGeometry.addGroup(
-        groupStart * 3,
-        (i - groupStart) * 3,
-        currentRegion
-      );
-      groupStart = i;
-      currentRegion = region;
-    }
-  }
-
-  newGeometry.computeBoundingBox();
-  newGeometry.computeBoundingSphere();
-
-  return newGeometry;
-}
-
-export function extractFaceComponentGeometry(
+export function extractComponentGeometry(
   geometry: THREE.BufferGeometry,
   faceIndices: number[]
 ) {
@@ -245,7 +176,10 @@ export function extractFaceComponentGeometry(
   );
 
   if (newNormals) {
-    componentGeometry.setAttribute("normal", new THREE.BufferAttribute(newNormals, 3));
+    componentGeometry.setAttribute(
+      "normal",
+      new THREE.BufferAttribute(newNormals, 3)
+    );
   } else {
     componentGeometry.computeVertexNormals();
   }
@@ -254,3 +188,6 @@ export function extractFaceComponentGeometry(
   componentGeometry.computeBoundingSphere();
   return componentGeometry;
 }
+
+export { getConnectedComponents as getFaceComponents };
+export { extractComponentGeometry as extractFaceComponentGeometry };

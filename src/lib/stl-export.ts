@@ -8,8 +8,12 @@ import {
   type SVGResultPaths,
 } from "three/examples/jsm/loaders/SVGLoader.js";
 import { SimplifyModifier } from "three/examples/jsm/modifiers/SimplifyModifier.js";
-import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { getCaseModelAssetPaths, prepareCaseModel } from "@/lib/case-models";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import {
+  getCaseModelAssetPath,
+  prepareCaseModel,
+  type PreparedCaseModel,
+} from "@/lib/case-models";
 import type {
   ArtworkStyle,
   CaseModelId,
@@ -21,7 +25,6 @@ import {
   getArtworkBounds,
   getContinuousPanelArtworkSlices,
   type LidPanelGeometry,
-  type TopLidBounds,
 } from "@/lib/deck-case-artwork";
 import { FILAMENT_PALETTE } from "@/lib/filaments";
 import { traceRasterBlobToSvg } from "@/lib/raster-trace-client";
@@ -30,8 +33,6 @@ import {
   resolveBackgroundMode,
   type ResolvedLogoBackgroundMode,
 } from "@/lib/logo-background";
-
-const EXPORT_FILENAME = "deck-case-design.3mf";
 
 const EMBOSS_HEIGHT = 0.6;
 const EMBOSS_WELD_DEPTH = 0.12;
@@ -119,11 +120,7 @@ const EXPORT_PROFILES: Record<ExportQuality, ExportProfile> = {
 
 const preparedModelPromises = new Map<
   CaseModelId,
-  Promise<{
-    regionGeometry: THREE.BufferGeometry;
-    lidPanelGeometries: LidPanelGeometry[];
-    topLidBounds: TopLidBounds;
-  }>
+  Promise<PreparedCaseModel>
 >();
 
 function loadImage(src: string) {
@@ -141,18 +138,16 @@ async function getPreparedModel(model: CaseModelId) {
     return existingPreparedModel;
   }
 
-  const preparedModelPromise = Promise.all(
-    getCaseModelAssetPaths(model).map(async (assetPath) => {
-      const response = await fetch(assetPath);
-      if (!response.ok) {
-        throw new Error("Failed to load base STL model");
-      }
+  const preparedModelPromise = (async () => {
+    const response = await fetch(getCaseModelAssetPath(model));
+    if (!response.ok) {
+      throw new Error("Failed to load base STL model");
+    }
 
-      const arrayBuffer = await response.arrayBuffer();
-      return new STLLoader().parse(arrayBuffer);
-    })
-  )
-    .then((geometries) => prepareCaseModel(model, geometries))
+    const arrayBuffer = await response.arrayBuffer();
+    const geometry = new STLLoader().parse(arrayBuffer);
+    return prepareCaseModel(model, geometry);
+  })()
     .catch((error) => {
       preparedModelPromises.delete(model);
       throw error;
@@ -167,6 +162,8 @@ function normalizeGeometryForMerge(geometry: THREE.BufferGeometry) {
   normalized.deleteAttribute("uv");
   normalized.deleteAttribute("color");
   normalized.computeVertexNormals();
+  normalized.computeBoundingBox();
+  normalized.computeBoundingSphere();
   return normalized;
 }
 
@@ -199,7 +196,7 @@ async function createEmbossGeometries(config: DesignConfig) {
 
   // Prefer the pre-traced vectorSvg for all logos (SVG uploads and color-traced PNGs).
   // This avoids expensive re-tracing during export.
-  if (config.logo.vectorSvg) {
+  if (config.logo.vectorSvg && isSvgLogo(config)) {
     // For raster-sourced logos (PNGs), don't override colors — let the
     // natural multicolor from vtracer traces come through.
     // Only apply logoColor for direct SVG uploads (monochrome vectors).
@@ -255,8 +252,7 @@ async function createEmbossGeometries(config: DesignConfig) {
       lidPanelGeometries,
       config.exportQuality,
       config.artworkStyle,
-      resolvedBackgroundMode,
-      config.logo.color
+      resolvedBackgroundMode
     );
 
     if (fallbackGeometries.length > 0) {
@@ -322,39 +318,6 @@ async function traceImageDataToSvg(
     svg,
     shouldFilterBackground: tracedSource.shouldFilterBackground,
   };
-}
-
-async function createRasterSourceVectorSvg(
-  image: HTMLImageElement,
-  quality: ExportQuality,
-  backgroundMode: ResolvedLogoBackgroundMode
-) {
-  const profile = getExportProfile(quality);
-  const traceScale = Math.min(
-    profile.traceScale,
-    profile.maxTraceDimension / Math.max(image.naturalWidth, image.naturalHeight, 1)
-  );
-  const width = Math.max(1, Math.round(image.naturalWidth * traceScale));
-  const height = Math.max(1, Math.round(image.naturalHeight * traceScale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-
-  if (!context) {
-    throw new Error("Failed to prepare vector trace source");
-  }
-
-  setHighQualitySmoothing(context);
-  context.clearRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
-
-  const traced = await traceImageDataToSvg(
-    context.getImageData(0, 0, width, height),
-    quality,
-    backgroundMode
-  );
-  return traced.svg;
 }
 
 function maybeSimplifyGeometry(
@@ -451,37 +414,46 @@ function collectMergedEmbossParts(parts: ExportPart[]) {
 
     const normalized = normalizeGeometryForMerge(mergedGeometry);
     mergedGeometry.dispose();
-    const welded = mergeVertices(normalized, 1e-4);
-    normalized.dispose();
-    welded.computeVertexNormals();
 
-    if (!validateExportGeometry(welded)) {
-      welded.dispose();
+    if (!validateExportGeometry(normalized)) {
+      normalized.dispose();
       continue;
     }
 
     mergedParts.push({
       color,
-      geometry: welded,
-      name: "emboss_merged",
+      geometry: normalized,
+      name: "artwork",
     });
   }
 
   return mergedParts;
 }
 
+function getTriangleCount(geometry: THREE.BufferGeometry) {
+  const indexCount = geometry.index?.count ?? 0;
+  if (indexCount > 0) {
+    return indexCount / 3;
+  }
+
+  return (geometry.getAttribute("position")?.count ?? 0) / 3;
+}
+
 function logExportStats(
   config: DesignConfig,
-  baseGeometry: THREE.BufferGeometry,
+  baseParts: ExportPart[],
   embossParts: ExportPart[]
 ) {
   if (process.env.NODE_ENV === "production") {
     return;
   }
 
-  const baseTriangles = (baseGeometry.getAttribute("position")?.count ?? 0) / 3;
+  const baseTriangles = baseParts.reduce(
+    (sum, part) => sum + getTriangleCount(part.geometry),
+    0
+  );
   const embossTriangles = embossParts.reduce(
-    (sum, part) => sum + (part.geometry.getAttribute("position")?.count ?? 0) / 3,
+    (sum, part) => sum + getTriangleCount(part.geometry),
     0
   );
 
@@ -489,7 +461,7 @@ function logExportStats(
     exportQuality: config.exportQuality,
     artworkStyle: config.artworkStyle,
     hasLogo: Boolean(config.logo.dataUrl || config.logo.vectorSvg),
-    meshCount: 1 + embossParts.length,
+    meshCount: baseParts.length + embossParts.length,
     baseTriangles,
     embossTriangles,
   });
@@ -622,116 +594,45 @@ async function createPanelSplitSvgEmbossGeometries(
   lidPanelGeometries: LidPanelGeometry[],
   quality: ExportQuality,
   style: ArtworkStyle,
-  _backgroundMode: LogoBackgroundMode,
+  backgroundMode: LogoBackgroundMode,
   logoColor: string | null
 ) {
-  const profile = getExportProfile(quality);
-  const viewBox = getSvgViewBox(svg);
-  const loader = new SVGLoader();
-  const svgData = loader.parse(svg);
-
-  // Compute how SVG coordinates map to artwork world coordinates
-  const artworkWidth = artworkBounds.maxX - artworkBounds.minX;
-  const artworkHeight = artworkBounds.maxY - artworkBounds.minY;
-  const svgToWorldX = artworkWidth / viewBox.width;
-  const svgToWorldY = artworkHeight / viewBox.height;
-
-  const geometries: ExportPart[] = [];
-
-  // Collect all non-background shapes in SVG order (back-to-front).
-  // In vtracer's "stacked" mode, later paths sit ON TOP of earlier paths,
-  // meaning earlier paths cover the entire area under them.
-  const shapeCandidates: ShapeCandidate[] = [];
-
-  for (const path of svgData.paths) {
-    if (shouldSkipSvgPath(path)) {
-      continue;
-    }
-
-    const isBackground = isLikelyBackgroundColor(path.color, true);
-    if (isBackground) continue;
-
-    const shapes = SVGLoader.createShapes(path);
-    if (shapes.length === 0) continue;
-
-    for (const shape of shapes) {
-      const points = shape.getPoints(profile.curveSegments * 2);
-      const bounds = getPointsBounds(points);
-
-      if (
-        bounds.getSize(new THREE.Vector2()).x *
-          bounds.getSize(new THREE.Vector2()).y <
-        profile.minPathPixelArea
-      ) {
-        continue;
-      }
-
-      shapeCandidates.push({
-        bounds,
-        color: logoColor
-          ? new THREE.Color(logoColor).getHex()
-          : quantizeExportColor(path.color),
-        points,
-        shape,
-      });
-    }
+  let sourceSvg = svg;
+  if (logoColor) {
+    const styleInjection = `<style>path:not([fill="#FFFFFF"]):not([fill="#ffffff"]):not([fill="none"]) { fill: ${logoColor} !important; }</style>`;
+    sourceSvg = sourceSvg.replace(/<svg[^>]*>/i, (match) => `${match}${styleInjection}`);
   }
 
-  if (shapeCandidates.length === 0) {
-    return geometries;
+  const image = await rasterizeSvgToImage(sourceSvg, quality);
+  const backgroundCanvas = document.createElement("canvas");
+  backgroundCanvas.width = image.naturalWidth;
+  backgroundCanvas.height = image.naturalHeight;
+  const backgroundContext = backgroundCanvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+  let resolvedBackgroundMode: ResolvedLogoBackgroundMode = "none";
+
+  if (backgroundContext) {
+    backgroundContext.drawImage(image, 0, 0);
+    resolvedBackgroundMode = resolveBackgroundMode(
+      backgroundContext.getImageData(
+        0,
+        0,
+        backgroundCanvas.width,
+        backgroundCanvas.height
+      ),
+      backgroundMode
+    );
   }
 
-  const depth = getArtworkDepth(style);
-
-  for (const panel of lidPanelGeometries) {
-    const baseZ = getArtworkBaseZ(panel, style);
-
-    for (const candidate of shapeCandidates) {
-      const geometry = new THREE.ExtrudeGeometry(candidate.shape, {
-        depth,
-        bevelEnabled: false,
-        curveSegments: profile.curveSegments,
-        steps: 1,
-      });
-
-      geometry.computeBoundingBox();
-      const bounds = geometry.boundingBox;
-      const pixelWidth = bounds ? bounds.max.x - bounds.min.x : 0;
-      const pixelHeight = bounds ? bounds.max.y - bounds.min.y : 0;
-
-      if (
-        pixelWidth * pixelHeight < profile.minPathPixelArea ||
-        pixelWidth * svgToWorldX < profile.minPathWorldSize ||
-        pixelHeight * svgToWorldY < profile.minPathWorldSize
-      ) {
-        geometry.dispose();
-        continue;
-      }
-
-      geometry.deleteAttribute("uv");
-      geometry.translate(-viewBox.minX, -viewBox.minY, 0);
-      geometry.scale(svgToWorldX, -svgToWorldY, 1);
-      geometry.translate(artworkBounds.minX, artworkBounds.maxY, baseZ);
-
-      const simplified = maybeSimplifyGeometry(geometry, profile);
-      geometry.dispose();
-
-      if (!validateExportGeometry(simplified)) {
-        simplified.dispose();
-        continue;
-      }
-
-      geometries.push({
-        color: candidate.color,
-        geometry: simplified,
-        name: "emboss",
-      });
-    }
-
-    break;
-  }
-
-  return geometries;
+  return createRasterVectorEmbossGeometries(
+    image,
+    artworkBounds,
+    lidPanelGeometries,
+    quality,
+    style,
+    resolvedBackgroundMode
+  );
 }
 
 async function createRasterVectorEmbossGeometries(
@@ -740,8 +641,7 @@ async function createRasterVectorEmbossGeometries(
   lidPanelGeometries: LidPanelGeometry[],
   quality: ExportQuality,
   style: ArtworkStyle,
-  backgroundMode: ResolvedLogoBackgroundMode,
-  logoColor: string | null
+  backgroundMode: ResolvedLogoBackgroundMode
 ) {
   const profile = getExportProfile(quality);
   const slices = getContinuousPanelArtworkSlices(
@@ -914,7 +814,7 @@ async function createRasterVectorEmbossGeometries(
       geometries.push({
         color: candidate.color,
         geometry: simplified,
-        name: "emboss_raster",
+        name: "artwork",
       });
     }
   }
@@ -972,22 +872,75 @@ async function save3mf(blob: Blob, fileName: string) {
   downloadModel(blob, fileName);
 }
 
-export async function exportDesignAsStl(config: DesignConfig) {
-  const { regionGeometry } = await getPreparedModel(config.model);
-  const baseNormalized = normalizeGeometryForMerge(regionGeometry);
-  const baseGeometry = mergeVertices(baseNormalized, 1e-4);
-  baseNormalized.dispose();
-  baseGeometry.computeVertexNormals();
-  const embossParts = collectMergedEmbossParts(await createEmbossGeometries(config));
-  logExportStats(config, baseGeometry, embossParts);
+function prepareExportPartGeometry(geometry: THREE.BufferGeometry) {
+  const normalized = normalizeGeometryForMerge(geometry);
+
+  if (!validateExportGeometry(normalized)) {
+    normalized.dispose();
+    throw new Error("Prepared export geometry is invalid");
+  }
+
+  return normalized;
+}
+
+function createBaseExportParts(
+  config: DesignConfig,
+  preparedModel: PreparedCaseModel
+) {
+  const lidNames =
+    config.model === "compact-3-lid"
+      ? (["lid-left", "lid-center", "lid-right"] as const)
+      : (["lid"] as const);
+  const lidColors =
+    config.model === "rugged" ? [config.panelColors[0]] : config.panelColors;
+
+  const parts: ExportPart[] = preparedModel.lidSections.map((lidSection, index) => ({
+    color: lidColors[index] ?? lidColors[0],
+    geometry: prepareExportPartGeometry(lidSection.geometry),
+    name: lidNames[index] ?? `lid-${index}`,
+  }));
+
+  parts.push({
+    color: config.bottomColor,
+    geometry: prepareExportPartGeometry(preparedModel.bottomGeometry),
+    name: "bottom-tray",
+  });
+
+  if (preparedModel.clipsGeometry) {
+    parts.push({
+      color: config.clipsColor,
+      geometry: prepareExportPartGeometry(preparedModel.clipsGeometry),
+      name: "clips",
+    });
+  }
+
+  return parts;
+}
+
+function getExportFileName(model: CaseModelId) {
+  return model === "compact-3-lid"
+    ? "compact-3-lid-configured.3mf"
+    : "rugged-configured.3mf";
+}
+
+export async function exportDesignAs3MF(config: DesignConfig) {
+  const preparedModel = await getPreparedModel(config.model);
+  const baseParts = createBaseExportParts(config, preparedModel);
+  const embossParts = collectMergedEmbossParts(
+    await createEmbossGeometries(config)
+  );
+  logExportStats(config, baseParts, embossParts);
   const exportGroup = new THREE.Group();
   exportGroup.name = "deck-case-design";
-  const baseMesh = new THREE.Mesh(
-    baseGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xd9d9d9 })
-  );
-  baseMesh.name = "base";
-  exportGroup.add(baseMesh);
+
+  for (const part of baseParts) {
+    const mesh = new THREE.Mesh(
+      part.geometry,
+      new THREE.MeshStandardMaterial({ color: part.color })
+    );
+    mesh.name = part.name;
+    exportGroup.add(mesh);
+  }
 
   for (const [index, part] of embossParts.entries()) {
     const mesh = new THREE.Mesh(
@@ -1017,5 +970,9 @@ export async function exportDesignAsStl(config: DesignConfig) {
     );
   }
 
-  await save3mf(data, EXPORT_FILENAME);
+  await save3mf(data, getExportFileName(config.model));
+}
+
+export async function exportDesignAsStl(config: DesignConfig) {
+  return exportDesignAs3MF(config);
 }

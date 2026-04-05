@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLoader } from "@react-three/fiber";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -8,9 +8,12 @@ import { prepareCaseModel } from "@/lib/case-models";
 import {
   getArtworkBounds,
   getContinuousPanelArtworkSlices,
+  type LidPanelGeometry,
 } from "@/lib/deck-case-artwork";
 import { CASE_MODELS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
+
+const COMPACT_LID_NAMES = ["lid-left", "lid-center", "lid-right"] as const;
 
 function loadImageSource(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -25,10 +28,12 @@ async function loadLogoPreviewImage(logo: {
   dataUrl: string | null;
   rasterSourceDataUrl: string | null;
   vectorSvg: string | null;
+  originalFileName: string | null;
   color: string | null;
 }) {
-  // For direct SVG uploads (no raster source), use the vectorSvg with color injection
-  if (logo.vectorSvg && !logo.rasterSourceDataUrl) {
+  const isSvgLogo = logo.originalFileName?.toLowerCase().endsWith(".svg");
+
+  if (logo.vectorSvg && isSvgLogo) {
     let svgContent = logo.vectorSvg;
     if (logo.color) {
       const styleInjection = `<style>path:not([fill="#FFFFFF"]):not([fill="#ffffff"]):not([fill="none"]) { fill: ${logo.color} !important; }</style>`;
@@ -52,8 +57,6 @@ async function loadLogoPreviewImage(logo: {
     }
   }
 
-  // For raster-sourced logos (PNG/JPG), use the processed preview image
-  // which preserves original colors with background removed
   if (logo.dataUrl) {
     return loadImageSource(logo.dataUrl);
   }
@@ -61,54 +64,88 @@ async function loadLogoPreviewImage(logo: {
   return null;
 }
 
-export default function DeckCaseModel() {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const rawGeometries = useLoader(STLLoader, [
-    ...CASE_MODELS["compact-3-lid"].assetPaths,
-    ...CASE_MODELS.rugged.assetPaths,
-  ]);
-  const [logoTexture, setLogoTexture] = useState<THREE.Texture | null>(null);
+type PartMesh = {
+  key: string;
+  name: string;
+  geometry: THREE.BufferGeometry;
+  color: string;
+};
 
+function getPartMeshes(
+  model: "compact-3-lid" | "rugged",
+  lidSections: LidPanelGeometry[],
+  bottomGeometry: THREE.BufferGeometry,
+  clipsGeometry: THREE.BufferGeometry | null,
+  panelColors: [string, string, string],
+  bottomColor: string,
+  clipsColor: string
+) {
+  const lidColors = model === "rugged" ? [panelColors[0]] : panelColors;
+  const parts: PartMesh[] = lidSections.map((section, index) => ({
+    key: `lid-${index}`,
+    name:
+      model === "compact-3-lid"
+        ? COMPACT_LID_NAMES[index] ?? `lid-${index}`
+        : "lid",
+    geometry: section.geometry,
+    color: lidColors[index] ?? lidColors[0],
+  }));
+
+  parts.push({
+    key: "bottom-tray",
+    name: "bottom-tray",
+    geometry: bottomGeometry,
+    color: bottomColor,
+  });
+
+  if (clipsGeometry) {
+    parts.push({
+      key: "clips",
+      name: "clips",
+      geometry: clipsGeometry,
+      color: clipsColor,
+    });
+  }
+
+  return parts;
+}
+
+export default function DeckCaseModel() {
   const model = useDesignStore((s) => s.model);
   const panelColors = useDesignStore((s) => s.panelColors);
   const bottomColor = useDesignStore((s) => s.bottomColor);
+  const clipsColor = useDesignStore((s) => s.clipsColor);
   const logo = useDesignStore((s) => s.logo);
   const artworkStyle = useDesignStore((s) => s.artworkStyle);
-  const { dataUrl, rasterSourceDataUrl, vectorSvg, color } = logo;
+  const { dataUrl, rasterSourceDataUrl, vectorSvg, color, originalFileName } = logo;
 
-  const preparedModels = useMemo(
-    () => ({
-      "compact-3-lid": prepareCaseModel("compact-3-lid", [rawGeometries[0]]),
-      rugged: prepareCaseModel("rugged", [rawGeometries[1], rawGeometries[2]]),
-    }),
-    [rawGeometries]
+  const rawGeometry = useLoader(
+    STLLoader,
+    CASE_MODELS[model].assetPath
+  ) as THREE.BufferGeometry;
+
+  const preparedModel = useMemo(
+    () => prepareCaseModel(model, rawGeometry),
+    [model, rawGeometry]
   );
-  const preparedModel = preparedModels[model];
-  const { regionGeometry, lidPanelGeometries, topLidBounds } = preparedModel;
+  const { lidSections, bottomGeometry, clipsGeometry, topLidBounds } =
+    preparedModel;
 
-  const materials = useMemo(
-    () => {
-      const lidColors =
-        model === "rugged" ? [panelColors[0]] : panelColors;
-
-      return [
-        ...lidColors.map(
-          (color) =>
-            new THREE.MeshStandardMaterial({
-              color,
-              roughness: 0.4,
-              metalness: 0.1,
-            })
-        ),
-        new THREE.MeshStandardMaterial({
-          color: bottomColor,
-          roughness: 0.4,
-          metalness: 0.1,
-        }),
-      ];
-    },
-    [bottomColor, model, panelColors]
+  const partMeshes = useMemo(
+    () =>
+      getPartMeshes(
+        model,
+        lidSections,
+        bottomGeometry,
+        clipsGeometry,
+        panelColors,
+        bottomColor,
+        clipsColor
+      ),
+    [bottomColor, clipsColor, clipsGeometry, lidSections, model, panelColors, bottomGeometry]
   );
+
+  const [logoTexture, setLogoTexture] = useState<THREE.Texture | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -123,7 +160,13 @@ export default function DeckCaseModel() {
         }
       });
     } else {
-      loadLogoPreviewImage({ dataUrl, rasterSourceDataUrl, vectorSvg, color })
+      loadLogoPreviewImage({
+        dataUrl,
+        rasterSourceDataUrl,
+        vectorSvg,
+        originalFileName,
+        color,
+      })
         .then((image) => {
           if (!image) {
             throw new Error("Missing preview source");
@@ -156,7 +199,7 @@ export default function DeckCaseModel() {
     return () => {
       isCancelled = true;
     };
-  }, [dataUrl, rasterSourceDataUrl, vectorSvg, color]);
+  }, [color, dataUrl, originalFileName, rasterSourceDataUrl, vectorSvg]);
 
   const artworkBounds = useMemo(() => {
     return getArtworkBounds(logo, topLidBounds);
@@ -190,7 +233,7 @@ export default function DeckCaseModel() {
     }
 
     return getContinuousPanelArtworkSlices(
-      lidPanelGeometries,
+      lidSections,
       artworkBounds,
       sourceWidth,
       sourceHeight
@@ -212,10 +255,8 @@ export default function DeckCaseModel() {
           ((slice.overlapMinX - panel.bounds.min.x) / panel.width) * canvas.width;
         const destY =
           ((panel.bounds.max.y - slice.overlapMaxY) / panel.height) * canvas.height;
-        const destWidth =
-          (slice.overlapWidth / panel.width) * canvas.width;
-        const destHeight =
-          (slice.overlapHeight / panel.height) * canvas.height;
+        const destWidth = (slice.overlapWidth / panel.width) * canvas.width;
+        const destHeight = (slice.overlapHeight / panel.height) * canvas.height;
 
         context.clearRect(0, 0, canvas.width, canvas.height);
         context.drawImage(
@@ -241,7 +282,7 @@ export default function DeckCaseModel() {
         };
       })
       .filter((overlay): overlay is NonNullable<typeof overlay> => overlay !== null);
-  }, [artworkBounds, artworkStyle, lidPanelGeometries, logoTexture]);
+  }, [artworkBounds, artworkStyle, lidSections, logoTexture]);
 
   useEffect(() => {
     return () => {
@@ -258,17 +299,25 @@ export default function DeckCaseModel() {
   }, [logoTexture]);
 
   return (
-    <>
-      <mesh ref={meshRef} geometry={regionGeometry} material={materials} />
+    <group>
+      {partMeshes.map((part) => (
+        <mesh key={part.key} name={part.name} geometry={part.geometry}>
+          <meshStandardMaterial
+            color={part.color}
+            roughness={0.4}
+            metalness={0.1}
+          />
+        </mesh>
+      ))}
 
       {panelImageOverlays.map((overlay, index) => (
         <mesh
           key={index}
-            position={[
-              overlay.panel.center.x,
-              overlay.panel.center.y,
-              overlay.panel.outerFaceZ + overlay.zOffset,
-            ]}
+          position={[
+            overlay.panel.center.x,
+            overlay.panel.center.y,
+            overlay.panel.outerFaceZ + overlay.zOffset,
+          ]}
         >
           <planeGeometry args={[overlay.panel.width, overlay.panel.height]} />
           <meshStandardMaterial
@@ -284,6 +333,6 @@ export default function DeckCaseModel() {
           />
         </mesh>
       ))}
-    </>
+    </group>
   );
 }

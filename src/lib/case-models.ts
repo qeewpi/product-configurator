@@ -1,75 +1,46 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type {
-  LidPanelGeometry,
-  TopLidBounds,
-} from "@/lib/deck-case-artwork";
-import { prepareDeckCaseGeometry } from "@/lib/deck-case-artwork";
+import { describeLidPanelGeometry, getTopLidBounds } from "@/lib/deck-case-artwork";
 import { CASE_MODELS } from "@/lib/model-catalog";
 import {
-  extractFaceComponentGeometry,
-  getFaceComponents,
+  extractComponentGeometry,
+  getConnectedComponents,
 } from "@/lib/stl-regions";
 import type { CaseModelId } from "@/types/design";
+import type { LidPanelGeometry, TopLidBounds } from "@/lib/deck-case-artwork";
 
 export type PreparedCaseModel = {
-  regionGeometry: THREE.BufferGeometry;
+  lidSections: LidPanelGeometry[];
   lidPanelGeometries: LidPanelGeometry[];
+  bottomGeometry: THREE.BufferGeometry;
+  clipsGeometry: THREE.BufferGeometry | null;
   topLidBounds: TopLidBounds;
+  assembledBounds: THREE.Box3;
+  regionGeometry: THREE.BufferGeometry;
 };
 
-function describePanelGeometry(geometry: THREE.BufferGeometry): LidPanelGeometry {
-  const panelGeometry = geometry.index ? geometry.toNonIndexed() : geometry.clone();
-  panelGeometry.computeBoundingBox();
-  panelGeometry.computeBoundingSphere();
-  const bounds = panelGeometry.boundingBox!;
-  const center = new THREE.Vector3();
-  bounds.getCenter(center);
-
-  return {
-    geometry: panelGeometry,
-    bounds,
-    center,
-    outerFaceZ: bounds.max.z + 0.2,
-    exportSurfaceZ: bounds.max.z,
-    width: bounds.max.x - bounds.min.x,
-    height: bounds.max.y - bounds.min.y,
-  };
+function isSignificantComponent(component: {
+  faceCount: number;
+  maxExtent: number;
+}) {
+  return component.faceCount >= 100 && component.maxExtent >= 1;
 }
 
-function getTopLidBounds(lidPanelGeometries: LidPanelGeometry[]): TopLidBounds {
-  const topLidBox = new THREE.Box3();
-  for (const panel of lidPanelGeometries) {
-    topLidBox.union(panel.bounds);
-  }
-
-  const topLidCenter = new THREE.Vector3();
-  topLidBox.getCenter(topLidCenter);
-
-  return {
-    center: topLidCenter,
-    maxY: topLidBox.max.y,
-  };
-}
-
-function normalizeForComposite(geometry: THREE.BufferGeometry, materialIndex: number) {
-  const normalized = geometry.index ? geometry.toNonIndexed() : geometry.clone();
-  normalized.computeVertexNormals();
-  normalized.clearGroups();
-  normalized.addGroup(0, normalized.getAttribute("position").count, materialIndex);
-  return normalized;
-}
-
-function centerPlacedGeometries(geometries: THREE.BufferGeometry[]) {
+function computeAssemblyBounds(geometries: THREE.BufferGeometry[]) {
   const bounds = new THREE.Box3();
-  const geometryBounds = new THREE.Box3();
 
   for (const geometry of geometries) {
     geometry.computeBoundingBox();
-    geometryBounds.copy(geometry.boundingBox!);
-    bounds.union(geometryBounds);
+    if (geometry.boundingBox) {
+      bounds.union(geometry.boundingBox);
+    }
   }
 
+  return bounds;
+}
+
+function centerGeometries(geometries: THREE.BufferGeometry[]) {
+  const bounds = computeAssemblyBounds(geometries);
   const center = new THREE.Vector3();
   bounds.getCenter(center);
 
@@ -78,88 +49,118 @@ function centerPlacedGeometries(geometries: THREE.BufferGeometry[]) {
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
   }
+
+  const centeredBounds = computeAssemblyBounds(geometries);
+  return centeredBounds;
 }
 
-function prepareRuggedModel(
-  ruggedLidGeometry: THREE.BufferGeometry,
-  ruggedCombinedGeometry: THREE.BufferGeometry
-): PreparedCaseModel {
-  const ruggedComponents = getFaceComponents(ruggedCombinedGeometry).sort(
-    (a, b) => b.centroidY - a.centroidY
-  );
-
-  if (ruggedComponents.length < 2) {
-    throw new Error("Expected rugged model to contain separate lid and bottom parts");
+function compareRemainingComponents(
+  a: { footprintArea: number; faceCount: number },
+  b: { footprintArea: number; faceCount: number }
+) {
+  if (b.footprintArea !== a.footprintArea) {
+    return b.footprintArea - a.footprintArea;
   }
 
-  const topReferenceGeometry = extractFaceComponentGeometry(
-    ruggedCombinedGeometry,
-    ruggedComponents[0].faceIndices
-  );
-  const bottomGeometry = extractFaceComponentGeometry(
-    ruggedCombinedGeometry,
-    ruggedComponents[1].faceIndices
-  );
-  const lidGeometry = ruggedLidGeometry.clone();
-
-  topReferenceGeometry.computeBoundingBox();
-  lidGeometry.computeBoundingBox();
-
-  const topReferenceCenter = new THREE.Vector3();
-  topReferenceGeometry.boundingBox!.getCenter(topReferenceCenter);
-  const lidCenter = new THREE.Vector3();
-  lidGeometry.boundingBox!.getCenter(lidCenter);
-
-  lidGeometry.translate(
-    topReferenceCenter.x - lidCenter.x,
-    topReferenceCenter.y - lidCenter.y,
-    topReferenceCenter.z - lidCenter.z
-  );
-
-  centerPlacedGeometries([lidGeometry, bottomGeometry]);
-
-  const regionGeometry = mergeGeometries(
-    [normalizeForComposite(lidGeometry, 0), normalizeForComposite(bottomGeometry, 1)],
-    true
-  );
-
-  if (!regionGeometry) {
-    throw new Error("Failed to compose rugged model geometry");
-  }
-
-  const lidPanelGeometry = describePanelGeometry(lidGeometry);
-
-  topReferenceGeometry.dispose();
-  bottomGeometry.dispose();
-  lidGeometry.dispose();
-
-  return {
-    regionGeometry,
-    lidPanelGeometries: [lidPanelGeometry],
-    topLidBounds: getTopLidBounds([lidPanelGeometry]),
-  };
+  return b.faceCount - a.faceCount;
 }
 
 export function prepareCaseModel(
   model: CaseModelId,
-  geometries: THREE.BufferGeometry[]
+  geometry: THREE.BufferGeometry
 ): PreparedCaseModel {
-  if (model === "compact-3-lid") {
-    const [compactGeometry] = geometries;
-    if (!compactGeometry) {
-      throw new Error("Missing compact model geometry");
-    }
-    return prepareDeckCaseGeometry(compactGeometry);
+  const definition = CASE_MODELS[model];
+  const components = getConnectedComponents(geometry);
+  const significantComponents = components.filter(isSignificantComponent);
+  const expectedBodyComponentCount = definition.clipCount + 1;
+
+  if (significantComponents.length < definition.lidSectionCount + 1) {
+    throw new Error(
+      `Expected at least ${definition.lidSectionCount + 1} significant components for ${definition.label}, found ${significantComponents.length}`
+    );
   }
 
-  const [ruggedLidGeometry, ruggedCombinedGeometry] = geometries;
-  if (!ruggedLidGeometry || !ruggedCombinedGeometry) {
-    throw new Error("Missing rugged model geometry");
+  const lidComponents = [...significantComponents]
+    .sort((a, b) => b.centroid.z - a.centroid.z)
+    .slice(0, definition.lidSectionCount)
+    .sort((a, b) => a.centroid.x - b.centroid.x);
+
+  const remainingComponents = significantComponents.filter(
+    (component) => !lidComponents.includes(component)
+  );
+
+  if (remainingComponents.length === 0) {
+    throw new Error(`Expected remaining parts for ${definition.label}`);
   }
 
-  return prepareRuggedModel(ruggedLidGeometry, ruggedCombinedGeometry);
+  if (
+    process.env.NODE_ENV !== "production" &&
+    remainingComponents.length !== expectedBodyComponentCount
+  ) {
+    console.warn("[case-models] Unexpected remaining component count", {
+      model,
+      expectedBodyComponentCount,
+      remainingComponentCount: remainingComponents.length,
+    });
+  }
+
+  const bottomComponent = [...remainingComponents].sort(
+    compareRemainingComponents
+  )[0];
+  const clipComponents = remainingComponents.filter(
+    (component) => component !== bottomComponent
+  );
+
+  const lidGeometries = lidComponents.map((component) =>
+    extractComponentGeometry(geometry, component.faceIndices)
+  );
+  const bottomGeometry = extractComponentGeometry(
+    geometry,
+    bottomComponent.faceIndices
+  );
+  const clipGeometries = clipComponents.map((component) =>
+    extractComponentGeometry(geometry, component.faceIndices)
+  );
+
+  const clipsGeometry =
+    clipGeometries.length > 0
+      ? mergeGeometries(clipGeometries, false)
+      : null;
+
+  if (clipGeometries.length > 0 && !clipsGeometry) {
+    throw new Error(`Failed to merge clips for ${definition.label}`);
+  }
+
+  const allGeometries = [
+    ...lidGeometries,
+    bottomGeometry,
+    ...(clipsGeometry ? [clipsGeometry] : []),
+  ];
+  const assembledBounds = centerGeometries(allGeometries);
+  const regionGeometry = mergeGeometries(
+    allGeometries.map((geometry) => geometry.clone()),
+    false
+  );
+
+  if (!regionGeometry) {
+    throw new Error(`Failed to assemble region geometry for ${definition.label}`);
+  }
+
+  const lidSections = lidGeometries.map((lidGeometry) =>
+    describeLidPanelGeometry(lidGeometry)
+  );
+
+  return {
+    lidSections,
+    lidPanelGeometries: lidSections,
+    bottomGeometry,
+    clipsGeometry,
+    topLidBounds: getTopLidBounds(lidSections),
+    assembledBounds,
+    regionGeometry,
+  };
 }
 
-export function getCaseModelAssetPaths(model: CaseModelId) {
-  return CASE_MODELS[model].assetPaths;
+export function getCaseModelAssetPath(model: CaseModelId) {
+  return CASE_MODELS[model].assetPath;
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Center } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import DeckCaseModel from "./DeckCaseModel";
@@ -94,7 +94,7 @@ export default function Scene() {
   });
   const isHandToolActive = isHandToolPinned || isSpacePressed;
 
-  const applyDefaultCamera = () => {
+  const applyDefaultCamera = useCallback(() => {
     const controls = controlsRef.current;
     if (!controls) return;
 
@@ -102,7 +102,7 @@ export default function Scene() {
     controls.object.up.set(0, 1, 0);
     controls.target.set(...CAMERA_TARGET);
     controls.update();
-  };
+  }, []);
 
   useEffect(() => {
     const controls = controlsRef.current;
@@ -110,13 +110,13 @@ export default function Scene() {
 
     applyDefaultCamera();
     controls.saveState();
-  }, []);
+  }, [applyDefaultCamera]);
 
-  const resetCamera = () => {
+  const resetCamera = useCallback(() => {
     applyDefaultCamera();
     setIsHandToolPinned(false);
     setIsSpacePressed(false);
-  };
+  }, [applyDefaultCamera]);
 
   const dismissTutorial = () => {
     setIsTutorialOpen(false);
@@ -193,7 +193,7 @@ export default function Scene() {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onWindowBlur);
     };
-  }, [isHandToolActive]);
+  }, [isHandToolActive, resetCamera]);
 
   return (
     <div className="relative w-full h-full">
@@ -317,9 +317,7 @@ export default function Scene() {
         <directionalLight position={[-50, 50, 80]} intensity={0.5} />
 
         <Suspense fallback={<LoadingFallback />}>
-          <Center>
-            <DeckCaseModel />
-          </Center>
+          <DeckCaseModel />
         </Suspense>
 
         <OrbitControls

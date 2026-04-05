@@ -275,7 +275,6 @@ export function resolveBackgroundMode(
   }
 
   let isBackgroundDark = false;
-  let isBackgroundBright = false;
 
   if (opaqueSamples > 0) {
     const whiteRatio = whiteSamples / opaqueSamples;
