@@ -186,3 +186,110 @@ export function getContinuousPanelArtworkSlices(
     return continuousSlice;
   });
 }
+
+export type ArtworkPlacementValidation = {
+  actualBounds: ArtworkBounds | null;
+  isValid: boolean;
+  deltas: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    width: number;
+    height: number;
+  } | null;
+};
+
+export function getExportGeometryBounds(geometries: THREE.BufferGeometry[]) {
+  const combined = new THREE.Box3();
+  let hasBounds = false;
+
+  for (const geometry of geometries) {
+    geometry.computeBoundingBox();
+    const bounds = geometry.boundingBox;
+    if (!bounds) {
+      continue;
+    }
+
+    combined.union(bounds);
+    hasBounds = true;
+  }
+
+  return hasBounds ? combined : null;
+}
+
+export function collectExportPartColors(
+  parts: Array<{ color: THREE.ColorRepresentation }>
+) {
+  const colors = new Set<string>();
+
+  for (const part of parts) {
+    colors.add(`#${new THREE.Color(part.color).getHexString()}`);
+  }
+
+  return Array.from(colors);
+}
+
+export function validateArtworkPlacement(
+  expectedArtworkBounds: ArtworkBounds,
+  exportParts: Array<{ geometry: THREE.BufferGeometry }>,
+  options?: {
+    positionToleranceMm?: number;
+    sizeToleranceRatio?: number;
+  }
+): ArtworkPlacementValidation {
+  const combinedBounds = getExportGeometryBounds(
+    exportParts.map((part) => part.geometry)
+  );
+
+  if (!combinedBounds) {
+    return {
+      actualBounds: null,
+      isValid: false,
+      deltas: null,
+    };
+  }
+
+  const actualBounds: ArtworkBounds = {
+    minX: combinedBounds.min.x,
+    maxX: combinedBounds.max.x,
+    minY: combinedBounds.min.y,
+    maxY: combinedBounds.max.y,
+    width: combinedBounds.max.x - combinedBounds.min.x,
+    height: combinedBounds.max.y - combinedBounds.min.y,
+  };
+
+  const positionToleranceMm = options?.positionToleranceMm ?? 0.5;
+  const sizeToleranceRatio = options?.sizeToleranceRatio ?? 0.03;
+  const widthTolerance = Math.max(
+    positionToleranceMm,
+    expectedArtworkBounds.width * sizeToleranceRatio
+  );
+  const heightTolerance = Math.max(
+    positionToleranceMm,
+    expectedArtworkBounds.height * sizeToleranceRatio
+  );
+
+  const deltas = {
+    minX: actualBounds.minX - expectedArtworkBounds.minX,
+    maxX: actualBounds.maxX - expectedArtworkBounds.maxX,
+    minY: actualBounds.minY - expectedArtworkBounds.minY,
+    maxY: actualBounds.maxY - expectedArtworkBounds.maxY,
+    width: actualBounds.width - expectedArtworkBounds.width,
+    height: actualBounds.height - expectedArtworkBounds.height,
+  };
+
+  const isValid =
+    Math.abs(deltas.minX) <= widthTolerance &&
+    Math.abs(deltas.maxX) <= widthTolerance &&
+    Math.abs(deltas.minY) <= heightTolerance &&
+    Math.abs(deltas.maxY) <= heightTolerance &&
+    Math.abs(deltas.width) <= widthTolerance &&
+    Math.abs(deltas.height) <= heightTolerance;
+
+  return {
+    actualBounds,
+    isValid,
+    deltas,
+  };
+}

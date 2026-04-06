@@ -20,6 +20,8 @@ export interface TraceSettings {
   pathPrecision: number;
   colorPrecision: number;
   layerDifference: number;
+  maxColors: number;
+  paletteColors: string[];
 }
 
 export interface LogoConfig {

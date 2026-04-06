@@ -10,7 +10,10 @@ import {
   getContinuousPanelArtworkSlices,
   type LidPanelGeometry,
 } from "@/lib/deck-case-artwork";
-import { createLogoPreviewBlobUrl } from "@/lib/logo-svg-preview";
+import {
+  createLogoPreviewBlobUrl,
+  resolveLogoSourceKind,
+} from "@/lib/logo-svg-preview";
 import { CASE_MODELS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 
@@ -31,11 +34,14 @@ async function loadLogoPreviewImage(logo: {
   vectorSvg: string | null;
   originalFileName: string | null;
   color: string | null;
+  sourceKind: ReturnType<typeof resolveLogoSourceKind>;
+  traceStyle: "color" | "lineart";
 }) {
   if (logo.vectorSvg) {
     const objectUrl = createLogoPreviewBlobUrl(logo.vectorSvg, {
       color: logo.color,
-      sourceKind: "svg",
+      sourceKind: logo.sourceKind,
+      traceStyle: logo.traceStyle,
     });
 
     try {
@@ -155,13 +161,20 @@ export default function DeckCaseModel() {
         }
       });
     } else {
-      loadLogoPreviewImage({
-        dataUrl,
-        rasterSourceDataUrl,
-        vectorSvg,
-        originalFileName,
-        color,
-      })
+        loadLogoPreviewImage({
+          dataUrl,
+          rasterSourceDataUrl,
+          vectorSvg,
+          originalFileName,
+          color,
+          sourceKind: resolveLogoSourceKind({
+            rasterSourceDataUrl,
+            vectorSvg,
+            originalFileName,
+            sourceKind: null,
+          }),
+          traceStyle: logo.traceSettings.style,
+        })
         .then((image) => {
           if (!image) {
             throw new Error("Missing preview source");
@@ -194,7 +207,14 @@ export default function DeckCaseModel() {
     return () => {
       isCancelled = true;
     };
-  }, [color, dataUrl, originalFileName, rasterSourceDataUrl, vectorSvg]);
+  }, [
+    color,
+    dataUrl,
+    logo.traceSettings.style,
+    originalFileName,
+    rasterSourceDataUrl,
+    vectorSvg,
+  ]);
 
   const artworkBounds = useMemo(() => {
     return getArtworkBounds(logo, topLidBounds);

@@ -106,8 +106,9 @@ export default function LogoUpload() {
     return createLogoPreviewBlobUrl(logo.vectorSvg, {
       color: logo.color,
       sourceKind,
+      traceStyle: logo.traceSettings.style,
     });
-  }, [logo.color, logo.dataUrl, logo.vectorSvg, sourceKind]);
+  }, [logo.color, logo.dataUrl, logo.traceSettings.style, logo.vectorSvg, sourceKind]);
 
   useEffect(() => {
     return () => {

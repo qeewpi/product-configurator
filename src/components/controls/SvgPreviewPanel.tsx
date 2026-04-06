@@ -50,8 +50,9 @@ function PreviewArtwork({
     return createLogoPreviewBlobUrl(logo.vectorSvg, {
       color: logo.color,
       sourceKind,
+      traceStyle: logo.traceSettings.style,
     });
-  }, [logo.color, logo.vectorSvg, sourceKind]);
+  }, [logo.color, logo.traceSettings.style, logo.vectorSvg, sourceKind]);
 
   useEffect(() => {
     return () => {

@@ -8,7 +8,7 @@ import type {
 
 type TraceNumericDefaults = Omit<
   TraceSettings,
-  "style" | "preset" | "hierarchical" | "curveMode"
+  "style" | "preset" | "hierarchical" | "curveMode" | "paletteColors"
 >;
 
 export const DEFAULT_TRACE_STYLE: TraceStyle = "color";
@@ -29,6 +29,7 @@ export const TRACE_PRESET_DEFAULTS: Record<
       pathPrecision: 2,
       colorPrecision: 6,
       layerDifference: 24,
+      maxColors: 8,
     },
     balanced: {
       filterSpeckle: 6,
@@ -38,6 +39,7 @@ export const TRACE_PRESET_DEFAULTS: Record<
       pathPrecision: 3,
       colorPrecision: 6,
       layerDifference: 16,
+      maxColors: 8,
     },
     detailed: {
       filterSpeckle: 4,
@@ -47,6 +49,7 @@ export const TRACE_PRESET_DEFAULTS: Record<
       pathPrecision: 5,
       colorPrecision: 6,
       layerDifference: 16,
+      maxColors: 8,
     },
   },
   lineart: {
@@ -58,6 +61,7 @@ export const TRACE_PRESET_DEFAULTS: Record<
       pathPrecision: 2,
       colorPrecision: 6,
       layerDifference: 16,
+      maxColors: 2,
     },
     balanced: {
       filterSpeckle: 8,
@@ -67,6 +71,7 @@ export const TRACE_PRESET_DEFAULTS: Record<
       pathPrecision: 3,
       colorPrecision: 6,
       layerDifference: 16,
+      maxColors: 2,
     },
     detailed: {
       filterSpeckle: 4,
@@ -76,6 +81,7 @@ export const TRACE_PRESET_DEFAULTS: Record<
       pathPrecision: 5,
       colorPrecision: 6,
       layerDifference: 16,
+      maxColors: 2,
     },
   },
 };
@@ -91,7 +97,46 @@ const TRACE_NUMERIC_LIMITS: Record<
   pathPrecision: { min: 0, max: 10 },
   colorPrecision: { min: 0, max: 12 },
   layerDifference: { min: 0, max: 64 },
+  maxColors: { min: 2, max: 12 },
 };
+
+function normalizePaletteColor(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  if (/^#[0-9a-fA-F]{3}$/.test(normalized)) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`.toUpperCase();
+  }
+
+  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+    return normalized.toUpperCase();
+  }
+
+  return null;
+}
+
+export function normalizePaletteColors(colors?: string[] | null) {
+  if (!colors?.length) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const color of colors) {
+    const next = normalizePaletteColor(color);
+    if (!next || seen.has(next)) {
+      continue;
+    }
+    seen.add(next);
+    normalized.push(next);
+  }
+
+  return normalized;
+}
 
 function clampInteger(value: number | null | undefined, min: number, max: number) {
   if (!Number.isFinite(value ?? Number.NaN)) {
@@ -118,6 +163,7 @@ export function getDefaultTraceSettings(
     hierarchical: DEFAULT_TRACE_HIERARCHICAL,
     curveMode: DEFAULT_TRACE_CURVE_MODE,
     ...getTraceNumericDefaults(style, preset),
+    paletteColors: [],
   };
 }
 
@@ -144,6 +190,7 @@ export function normalizeTraceSettings(
     style,
     preset === "custom" ? DEFAULT_TRACE_PRESET : preset
   );
+  const paletteColors = normalizePaletteColors(settings?.paletteColors);
 
   return {
     style,
@@ -185,6 +232,12 @@ export function normalizeTraceSettings(
       TRACE_NUMERIC_LIMITS.layerDifference.min,
       TRACE_NUMERIC_LIMITS.layerDifference.max
     ),
+    maxColors: clampInteger(
+      settings?.maxColors ?? baseDefaults.maxColors,
+      TRACE_NUMERIC_LIMITS.maxColors.min,
+      TRACE_NUMERIC_LIMITS.maxColors.max
+    ),
+    paletteColors,
   };
 }
 
@@ -214,6 +267,8 @@ export function isTraceSettingsPresetMatch(
     settings.curveMode === DEFAULT_TRACE_CURVE_MODE &&
     settings.pathPrecision === defaults.pathPrecision &&
     settings.colorPrecision === defaults.colorPrecision &&
-    settings.layerDifference === defaults.layerDifference
+    settings.layerDifference === defaults.layerDifference &&
+    settings.maxColors === defaults.maxColors &&
+    settings.paletteColors.length === 0
   );
 }
