@@ -29,10 +29,11 @@ import {
 import { FILAMENT_PALETTE } from "@/lib/filaments";
 import { traceRasterBlobToSvg } from "@/lib/raster-trace-client";
 import {
-  normalizeLogoArtworkImageData,
+  createTraceImageData,
   resolveBackgroundMode,
   type ResolvedLogoBackgroundMode,
 } from "@/lib/logo-background";
+import { isRasterLogo } from "@/lib/logo-svg-preview";
 
 const EMBOSS_HEIGHT = 0.6;
 const EMBOSS_WELD_DEPTH = 0.12;
@@ -196,12 +197,10 @@ async function createEmbossGeometries(config: DesignConfig) {
 
   // Prefer the pre-traced vectorSvg for all logos (SVG uploads and color-traced PNGs).
   // This avoids expensive re-tracing during export.
-  if (config.logo.vectorSvg && isSvgLogo(config)) {
+  if (config.logo.vectorSvg) {
     // For raster-sourced logos (PNGs), don't override colors — let the
     // natural multicolor from vtracer traces come through.
     // Only apply logoColor for direct SVG uploads (monochrome vectors).
-    const colorOverride = isSvgLogo(config) ? config.logo.color : null;
-
     const vectorGeometries = await createPanelSplitSvgEmbossGeometries(
       config.logo.vectorSvg,
       artworkBounds,
@@ -209,7 +208,8 @@ async function createEmbossGeometries(config: DesignConfig) {
       config.exportQuality,
       config.artworkStyle,
       config.logo.backgroundMode,
-      colorOverride
+      config.logo.color,
+      config.logo.traceSettings
     );
 
     if (vectorGeometries.length > 0) {
@@ -218,7 +218,7 @@ async function createEmbossGeometries(config: DesignConfig) {
   }
 
   // Fallback: re-trace from raster source if vectorSvg didn't produce geometry
-  if (config.logo.rasterSourceDataUrl || config.logo.dataUrl) {
+  if (isRasterLogo(config.logo)) {
     const rasterSource = config.logo.rasterSourceDataUrl ?? config.logo.dataUrl;
     if (!rasterSource) {
       return [];
@@ -252,7 +252,8 @@ async function createEmbossGeometries(config: DesignConfig) {
       lidPanelGeometries,
       config.exportQuality,
       config.artworkStyle,
-      resolvedBackgroundMode
+      resolvedBackgroundMode,
+      config.logo.traceSettings
     );
 
     if (fallbackGeometries.length > 0) {
@@ -290,13 +291,14 @@ function getExportProfile(quality: ExportQuality) {
 
 async function traceImageDataToSvg(
   imageData: ImageData,
-  quality: ExportQuality,
-  backgroundMode: ResolvedLogoBackgroundMode
+  backgroundMode: ResolvedLogoBackgroundMode,
+  traceSettings: DesignConfig["logo"]["traceSettings"]
 ) {
-  const tracedSource = normalizeLogoArtworkImageData(
+  const tracedSource = createTraceImageData(
     imageData,
     backgroundMode,
-    LINE_ART_MIN_ALPHA
+    traceSettings.style === "lineart" ? "bw" : "color",
+    { minForegroundAlpha: LINE_ART_MIN_ALPHA, edgeSoftness: 0.08 }
   );
   const canvas = document.createElement("canvas");
   canvas.width = tracedSource.imageData.width;
@@ -310,8 +312,7 @@ async function traceImageDataToSvg(
   context.putImageData(tracedSource.imageData, 0, 0);
   const svg = await traceRasterBlobToSvg(await canvasToBlob(canvas), {
     fileName: "trace-source.png",
-    quality,
-    style: "default",
+    traceSettings,
   });
 
   return {
@@ -467,11 +468,6 @@ function logExportStats(
   });
 }
 
-function isSvgLogo(config: DesignConfig) {
-  const fileName = config.logo.originalFileName?.toLowerCase() ?? "";
-  return fileName.endsWith(".svg");
-}
-
 function shouldSkipSvgPath(path: SVGResultPaths): boolean {
   const style = path.userData?.style;
   if (style) {
@@ -595,7 +591,8 @@ async function createPanelSplitSvgEmbossGeometries(
   quality: ExportQuality,
   style: ArtworkStyle,
   backgroundMode: LogoBackgroundMode,
-  logoColor: string | null
+  logoColor: string | null,
+  traceSettings: DesignConfig["logo"]["traceSettings"]
 ) {
   let sourceSvg = svg;
   if (logoColor) {
@@ -631,7 +628,8 @@ async function createPanelSplitSvgEmbossGeometries(
     lidPanelGeometries,
     quality,
     style,
-    resolvedBackgroundMode
+    resolvedBackgroundMode,
+    traceSettings
   );
 }
 
@@ -641,7 +639,8 @@ async function createRasterVectorEmbossGeometries(
   lidPanelGeometries: LidPanelGeometry[],
   quality: ExportQuality,
   style: ArtworkStyle,
-  backgroundMode: ResolvedLogoBackgroundMode
+  backgroundMode: ResolvedLogoBackgroundMode,
+  traceSettings: DesignConfig["logo"]["traceSettings"]
 ) {
   const profile = getExportProfile(quality);
   const slices = getContinuousPanelArtworkSlices(
@@ -691,8 +690,8 @@ async function createRasterVectorEmbossGeometries(
 
     const tracedSlice = await traceImageDataToSvg(
       sliceContext.getImageData(0, 0, sourceWidth, sourceHeight),
-      quality,
-      backgroundMode
+      backgroundMode,
+      traceSettings
     );
     const loader = new SVGLoader();
     const svgData = loader.parse(tracedSlice.svg);

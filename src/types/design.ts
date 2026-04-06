@@ -2,12 +2,33 @@ export type ExportQuality = "fast" | "balanced" | "detailed";
 export type ArtworkStyle = "flat" | "emboss";
 export type CaseModelId = "compact-3-lid" | "rugged";
 export type LogoBackgroundMode = "auto" | "white" | "black" | "none";
+export type LogoSourceKind = "raster" | "svg" | null;
+export type TraceStyle = "color" | "lineart";
+export type TracePreset = "quick" | "balanced" | "detailed" | "custom";
+export type TraceHierarchicalMode = "cutout" | "stacked";
+export type TraceCurveMode = "pixel" | "polygon" | "spline";
+
+export interface TraceSettings {
+  style: TraceStyle;
+  preset: TracePreset;
+  hierarchical: TraceHierarchicalMode;
+  curveMode: TraceCurveMode;
+  filterSpeckle: number;
+  cornerThreshold: number;
+  lengthThreshold: number;
+  spliceThreshold: number;
+  pathPrecision: number;
+  colorPrecision: number;
+  layerDifference: number;
+}
 
 export interface LogoConfig {
   dataUrl: string | null;
   rasterSourceDataUrl: string | null;
   vectorSvg: string | null;
   originalFileName: string | null;
+  sourceKind: LogoSourceKind;
+  traceSettings: TraceSettings;
   aspectRatio: number;
   backgroundMode: LogoBackgroundMode;
   processedBackgroundMode: LogoBackgroundMode | null;

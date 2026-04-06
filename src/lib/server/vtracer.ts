@@ -5,7 +5,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { promisify } from "node:util";
-import type { ExportQuality } from "@/types/design";
+import type { TraceSettings } from "@/types/design";
+import {
+  getTraceSettingsPresetDefaults,
+  normalizeTraceSettings,
+} from "@/lib/trace-settings";
 
 const execFile = promisify(execFileCallback);
 
@@ -27,84 +31,15 @@ const PYTHON_COMMAND_CANDIDATES = [
 
 type TraceOptions = {
   color_precision?: number;
-  colormode: "color" | "bw";
+  colormode: "color" | "binary";
   corner_threshold: number;
   filter_speckle: number;
   hierarchical?: "stacked" | "cutout";
   layer_difference?: number;
   length_threshold: number;
-  mode: "spline";
+  mode: "none" | "polygon" | "spline";
   path_precision: number;
   splice_threshold: number;
-};
-
-const TRACE_OPTIONS_BY_QUALITY: Record<ExportQuality, TraceOptions> = {
-  fast: {
-    colormode: "color",
-    hierarchical: "cutout",
-    mode: "spline",
-    filter_speckle: 12,
-    color_precision: 6,
-    layer_difference: 24,
-    corner_threshold: 80,
-    length_threshold: 6,
-    splice_threshold: 60,
-    path_precision: 2,
-  },
-  balanced: {
-    colormode: "color",
-    hierarchical: "cutout",
-    mode: "spline",
-    filter_speckle: 6,
-    color_precision: 6,
-    layer_difference: 16,
-    corner_threshold: 70,
-    length_threshold: 3,
-    splice_threshold: 45,
-    path_precision: 3,
-  },
-  detailed: {
-    colormode: "color",
-    hierarchical: "cutout",
-    mode: "spline",
-    filter_speckle: 4,
-    color_precision: 6,
-    layer_difference: 16,
-    corner_threshold: 60,
-    length_threshold: 2,
-    splice_threshold: 35,
-    path_precision: 5,
-  },
-};
-
-const LINE_ART_TRACE_OPTIONS: Record<ExportQuality, TraceOptions> = {
-  fast: {
-    colormode: "bw",
-    mode: "spline",
-    filter_speckle: 12,
-    corner_threshold: 90,
-    length_threshold: 8,
-    splice_threshold: 60,
-    path_precision: 2,
-  },
-  balanced: {
-    colormode: "bw",
-    mode: "spline",
-    filter_speckle: 8,
-    corner_threshold: 80,
-    length_threshold: 5,
-    splice_threshold: 50,
-    path_precision: 3,
-  },
-  detailed: {
-    colormode: "bw",
-    mode: "spline",
-    filter_speckle: 4,
-    corner_threshold: 72,
-    length_threshold: 3,
-    splice_threshold: 40,
-    path_precision: 5,
-  },
 };
 
 function getInputExtension(fileName?: string, mimeType?: string) {
@@ -121,17 +56,6 @@ function getInputExtension(fileName?: string, mimeType?: string) {
     default:
       return ".png";
   }
-}
-
-function getTraceOptions(
-  quality: ExportQuality,
-  style: "default" | "lineart"
-) {
-  if (style === "lineart") {
-    return LINE_ART_TRACE_OPTIONS[quality] ?? LINE_ART_TRACE_OPTIONS.balanced;
-  }
-
-  return TRACE_OPTIONS_BY_QUALITY[quality] ?? TRACE_OPTIONS_BY_QUALITY.balanced;
 }
 
 function getExecutionErrorMessage(error: unknown) {
@@ -159,9 +83,33 @@ function getExecutionErrorMessage(error: unknown) {
 async function runVtracer(
   inputPath: string,
   outputPath: string,
-  quality: ExportQuality,
-  style: "default" | "lineart"
+  traceSettings: TraceSettings
 ) {
+  const normalized = normalizeTraceSettings(traceSettings);
+  const defaults = getTraceSettingsPresetDefaults(
+    normalized.style,
+    normalized.preset === "custom" ? "balanced" : normalized.preset
+  );
+  const resolvedSettings = {
+    ...defaults,
+    ...normalized,
+  };
+  const traceOptions: TraceOptions = {
+    colormode: normalized.style === "lineart" ? "binary" : "color",
+    hierarchical: normalized.style === "lineart" ? undefined : resolvedSettings.hierarchical,
+    mode: resolvedSettings.curveMode === "pixel" ? "none" : resolvedSettings.curveMode,
+    filter_speckle: resolvedSettings.filterSpeckle,
+    corner_threshold: resolvedSettings.cornerThreshold,
+    length_threshold: resolvedSettings.lengthThreshold,
+    splice_threshold: resolvedSettings.spliceThreshold,
+    path_precision: resolvedSettings.pathPrecision,
+  };
+
+  if (normalized.style === "color") {
+    traceOptions.color_precision = resolvedSettings.colorPrecision;
+    traceOptions.layer_difference = resolvedSettings.layerDifference;
+  }
+
   let lastError: unknown;
 
   for (const command of PYTHON_COMMAND_CANDIDATES) {
@@ -171,7 +119,7 @@ async function runVtracer(
         [
           "-c",
           PYTHON_SCRIPT,
-          JSON.stringify(getTraceOptions(quality, style)),
+          JSON.stringify(traceOptions),
           inputPath,
           outputPath,
         ],
@@ -193,8 +141,7 @@ export async function traceRasterBufferToSvg(options: {
   buffer: Buffer;
   fileName?: string;
   mimeType?: string;
-  quality: ExportQuality;
-  style?: "default" | "lineart";
+  traceSettings: TraceSettings;
 }) {
   const tempDirectory = await mkdtemp(join(tmpdir(), "product-configurator-vtracer-"));
   const inputPath = join(
@@ -205,12 +152,7 @@ export async function traceRasterBufferToSvg(options: {
 
   try {
     await writeFile(inputPath, options.buffer);
-    await runVtracer(
-      inputPath,
-      outputPath,
-      options.quality,
-      options.style ?? "default"
-    );
+    await runVtracer(inputPath, outputPath, options.traceSettings);
     return await readFile(outputPath, "utf8");
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });

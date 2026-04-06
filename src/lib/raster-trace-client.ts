@@ -1,9 +1,9 @@
-import type { ExportQuality } from "@/types/design";
+import type { TraceSettings } from "@/types/design";
+import { getDefaultTraceSettings } from "@/lib/trace-settings";
 
 type TraceRasterOptions = {
   fileName?: string;
-  quality?: ExportQuality;
-  style?: "default" | "lineart";
+  traceSettings?: TraceSettings;
 };
 
 async function readTraceResponse(response: Response) {
@@ -22,19 +22,23 @@ export async function traceRasterBlobToSvg(
   blob: Blob,
   options: TraceRasterOptions = {}
 ) {
+  const traceSettings = options.traceSettings ?? getDefaultTraceSettings();
   const file = new File([blob], options.fileName ?? "image.png", {
     type: blob.type || "image/png",
   });
   const formData = new FormData();
   formData.set("image", file);
-
-  if (options.quality) {
-    formData.set("quality", options.quality);
-  }
-
-  if (options.style) {
-    formData.set("style", options.style);
-  }
+  formData.set("style", traceSettings.style);
+  formData.set("preset", traceSettings.preset);
+  formData.set("hierarchical", traceSettings.hierarchical);
+  formData.set("curveMode", traceSettings.curveMode);
+  formData.set("filterSpeckle", `${traceSettings.filterSpeckle}`);
+  formData.set("cornerThreshold", `${traceSettings.cornerThreshold}`);
+  formData.set("lengthThreshold", `${traceSettings.lengthThreshold}`);
+  formData.set("spliceThreshold", `${traceSettings.spliceThreshold}`);
+  formData.set("pathPrecision", `${traceSettings.pathPrecision}`);
+  formData.set("colorPrecision", `${traceSettings.colorPrecision}`);
+  formData.set("layerDifference", `${traceSettings.layerDifference}`);
 
   const response = await fetch("/api/trace", {
     method: "POST",

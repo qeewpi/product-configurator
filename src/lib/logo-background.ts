@@ -1,12 +1,52 @@
 import type { LogoBackgroundMode } from "@/types/design";
 
-export type ResolvedLogoBackgroundMode = Exclude<LogoBackgroundMode, "auto"> | { type: "otsu", threshold: number, isBackgroundDark: boolean };
+export type BackgroundFamily = "white" | "black";
 
-const WHITE_LUMINANCE_THRESHOLD = 242;
-const WHITE_CHROMA_THRESHOLD = 28;
-const BLACK_LUMINANCE_THRESHOLD = 18;
-const BLACK_CHROMA_THRESHOLD = 24;
+export type ResolvedLogoBackgroundMode =
+  | "none"
+  | {
+      type: "keyed";
+      family: BackgroundFamily;
+      confidence: number;
+      source: "manual" | "auto";
+    };
+
+export type TraceRenderMode = "color" | "bw";
+
+export type CleanLogoArtworkOptions = {
+  minForegroundAlpha?: number;
+  edgeSoftness?: number;
+  preserveColor?: boolean;
+};
+
+export type CleanLogoArtworkResult = {
+  imageData: ImageData;
+  resolvedMode: ResolvedLogoBackgroundMode;
+  shouldFilterBackground: boolean;
+  backgroundMask: Uint8Array;
+  foregroundBounds: { minX: number; minY: number; maxX: number; maxY: number } | null;
+};
+
 const FOREGROUND_ALPHA_THRESHOLD = 24;
+const BORDER_ALPHA_THRESHOLD = 16;
+const WHITE_FAMILY_LUMINANCE = 220;
+const WHITE_FAMILY_CHROMA = 44;
+const BLACK_FAMILY_LUMINANCE = 58;
+const BLACK_FAMILY_CHROMA = 36;
+const AUTO_KEY_CONFIDENCE_STRONG = 0.7;
+const AUTO_KEY_CONFIDENCE_MEDIUM = 0.55;
+const DEFAULT_SEED_SCORE = 0.66;
+const DEFAULT_FLOOD_SCORE = 0.58;
+const MONOCHROME_CONTRAST = 1.12;
+
+type BorderFamilyEstimate = {
+  family: BackgroundFamily;
+  confidence: number;
+};
+
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
 
 function cloneImageData(imageData: ImageData) {
   return new ImageData(
@@ -24,199 +64,91 @@ function getPixelChroma(r: number, g: number, b: number) {
   return Math.max(r, g, b) - Math.min(r, g, b);
 }
 
-function isNearWhite(r: number, g: number, b: number) {
-  return (
-    getPixelLuminance(r, g, b) >= WHITE_LUMINANCE_THRESHOLD &&
-    getPixelChroma(r, g, b) <= WHITE_CHROMA_THRESHOLD
-  );
-}
-
-function isNearBlack(r: number, g: number, b: number) {
-  return (
-    getPixelLuminance(r, g, b) <= BLACK_LUMINANCE_THRESHOLD &&
-    getPixelChroma(r, g, b) <= BLACK_CHROMA_THRESHOLD
-  );
-}
-
-function isBackgroundMatch(
-  r: number,
-  g: number,
-  b: number,
-  mode: ResolvedLogoBackgroundMode
-) {
-  if (mode === "white") return isNearWhite(r, g, b);
-  if (mode === "black") return isNearBlack(r, g, b);
-  return false;
-}
-
-function applyBinaryDilate(mask: Uint8Array, width: number, height: number) {
-  const output = new Uint8Array(mask.length);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      let isForeground = 0;
-
-      for (let offsetY = -1; offsetY <= 1 && !isForeground; offsetY += 1) {
-        const sampleY = y + offsetY;
-        if (sampleY < 0 || sampleY >= height) {
-          continue;
-        }
-
-        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-          const sampleX = x + offsetX;
-          if (sampleX < 0 || sampleX >= width) {
-            continue;
-          }
-
-          if (mask[sampleY * width + sampleX]) {
-            isForeground = 1;
-            break;
-          }
-        }
-      }
-
-      output[y * width + x] = isForeground;
-    }
-  }
-
-  return output;
-}
-
-function applyBinaryErode(mask: Uint8Array, width: number, height: number) {
-  const output = new Uint8Array(mask.length);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      let isForeground = 1;
-
-      for (let offsetY = -1; offsetY <= 1 && isForeground; offsetY += 1) {
-        const sampleY = y + offsetY;
-        if (sampleY < 0 || sampleY >= height) {
-          isForeground = 0;
-          break;
-        }
-
-        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-          const sampleX = x + offsetX;
-          if (sampleX < 0 || sampleX >= width) {
-            isForeground = 0;
-            break;
-          }
-
-          if (!mask[sampleY * width + sampleX]) {
-            isForeground = 0;
-            break;
-          }
-        }
-      }
-
-      output[y * width + x] = isForeground;
-    }
-  }
-
-  return output;
-}
-
-function applyMajorityFilter(mask: Uint8Array, width: number, height: number) {
-  const output = new Uint8Array(mask.length);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      let neighbors = 0;
-
-      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
-        const sampleY = y + offsetY;
-        if (sampleY < 0 || sampleY >= height) {
-          continue;
-        }
-
-        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-          const sampleX = x + offsetX;
-          if (sampleX < 0 || sampleX >= width) {
-            continue;
-          }
-
-          neighbors += mask[sampleY * width + sampleX];
-        }
-      }
-
-      output[y * width + x] = neighbors >= 4 ? 1 : 0;
-    }
-  }
-
-  return output;
-}
-
-function createForegroundMask(imageData: ImageData, minAlpha: number) {
-  const mask = new Uint8Array(imageData.width * imageData.height);
-
-  for (let i = 0; i < mask.length; i += 1) {
-    mask[i] = imageData.data[i * 4 + 3] >= minAlpha ? 1 : 0;
-  }
-
-  return applyMajorityFilter(
-    applyBinaryErode(
-      applyBinaryDilate(mask, imageData.width, imageData.height),
-      imageData.width,
-      imageData.height
-    ),
-    imageData.width,
-    imageData.height
-  );
-}
-
 export function computeOtsuThreshold(imageData: ImageData) {
   const { data } = imageData;
   const histogram = new Array(256).fill(0);
   let total = 0;
 
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 16) continue;
-    const l = Math.floor(getPixelLuminance(data[i], data[i + 1], data[i + 2]));
-    histogram[l]++;
-    total++;
+    if (data[i + 3] < BORDER_ALPHA_THRESHOLD) {
+      continue;
+    }
+
+    const luminance = Math.floor(getPixelLuminance(data[i], data[i + 1], data[i + 2]));
+    histogram[luminance] += 1;
+    total += 1;
   }
 
-  if (total === 0) return 128;
+  if (total === 0) {
+    return 128;
+  }
 
   let sum = 0;
-  for (let i = 0; i < 256; i++) sum += i * histogram[i];
+  for (let i = 0; i < 256; i += 1) {
+    sum += i * histogram[i];
+  }
 
-  let sumB = 0, wB = 0, wF = 0, varMax = 0, threshold = 0;
+  let sumBackground = 0;
+  let weightBackground = 0;
+  let maxVariance = 0;
+  let threshold = 0;
 
-  for (let t = 0; t < 256; t++) {
-    wB += histogram[t];
-    if (wB === 0) continue;
-    wF = total - wB;
-    if (wF === 0) break;
+  for (let candidate = 0; candidate < 256; candidate += 1) {
+    weightBackground += histogram[candidate];
+    if (weightBackground === 0) {
+      continue;
+    }
 
-    sumB += t * histogram[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
+    const weightForeground = total - weightBackground;
+    if (weightForeground === 0) {
+      break;
+    }
 
-    const varBetween = wB * wF * (mB - mF) * (mB - mF);
-    if (varBetween > varMax) {
-      varMax = varBetween;
-      threshold = t;
+    sumBackground += candidate * histogram[candidate];
+    const meanBackground = sumBackground / weightBackground;
+    const meanForeground = (sum - sumBackground) / weightForeground;
+    const varianceBetween =
+      weightBackground * weightForeground *
+      (meanBackground - meanForeground) *
+      (meanBackground - meanForeground);
+
+    if (varianceBetween > maxVariance) {
+      maxVariance = varianceBetween;
+      threshold = candidate;
     }
   }
+
   return threshold;
 }
 
-export function extractInkColor(imageData: ImageData, threshold: number): { r: number, g: number, b: number } {
-  let rSum = 0, gSum = 0, bSum = 0, count = 0;
+export function extractInkColor(
+  imageData: ImageData,
+  threshold: number
+): { r: number; g: number; b: number } {
+  let rSum = 0;
+  let gSum = 0;
+  let bSum = 0;
+  let count = 0;
   const { data } = imageData;
+
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 16) continue;
-    const l = getPixelLuminance(data[i], data[i + 1], data[i + 2]);
-    if (l < threshold) {
+    if (data[i + 3] < BORDER_ALPHA_THRESHOLD) {
+      continue;
+    }
+
+    const luminance = getPixelLuminance(data[i], data[i + 1], data[i + 2]);
+    if (luminance < threshold) {
       rSum += data[i];
       gSum += data[i + 1];
       bSum += data[i + 2];
-      count++;
+      count += 1;
     }
   }
-  if (count === 0) return { r: 0, g: 0, b: 0 };
+
+  if (count === 0) {
+    return { r: 0, g: 0, b: 0 };
+  }
+
   return {
     r: Math.round(rSum / count),
     g: Math.round(gSum / count),
@@ -224,142 +156,558 @@ export function extractInkColor(imageData: ImageData, threshold: number): { r: n
   };
 }
 
-export function resolveBackgroundMode(
-  imageData: ImageData,
-  mode: LogoBackgroundMode
-): ResolvedLogoBackgroundMode {
-  if (mode !== "auto") {
-    return mode;
+export function getBorderSamplePoints(imageData: ImageData, stride = 1) {
+  const { width, height } = imageData;
+  const points: Array<{ x: number; y: number }> = [];
+  const step = Math.max(1, stride);
+
+  for (let x = 0; x < width; x += step) {
+    points.push({ x, y: 0 });
+    if (height > 1) {
+      points.push({ x, y: height - 1 });
+    }
   }
 
-  const { data, width, height } = imageData;
-  const sampleStep = Math.max(1, Math.floor(Math.min(width, height) / 64));
-  let opaqueSamples = 0;
-  let whiteSamples = 0;
-  let blackSamples = 0;
+  for (let y = step; y < height - step; y += step) {
+    points.push({ x: 0, y });
+    if (width > 1) {
+      points.push({ x: width - 1, y });
+    }
+  }
 
-  const samplePixel = (x: number, y: number) => {
-    const offset = (y * width + x) * 4;
+  return points;
+}
+
+function scorePixelAgainstFamily(
+  r: number,
+  g: number,
+  b: number,
+  family: BackgroundFamily
+) {
+  const luminance = getPixelLuminance(r, g, b);
+  const chroma = getPixelChroma(r, g, b);
+  const chromaScore = clamp01(1 - chroma / 96);
+
+  if (family === "white") {
+    const luminanceScore = clamp01((luminance - 156) / 99);
+    return clamp01(luminanceScore * 0.82 + chromaScore * 0.18);
+  }
+
+  const luminanceScore = clamp01((84 - luminance) / 84);
+  return clamp01(luminanceScore * 0.82 + chromaScore * 0.18);
+}
+
+export function classifyPixelAgainstFamily(
+  r: number,
+  g: number,
+  b: number,
+  family: BackgroundFamily
+) {
+  return scorePixelAgainstFamily(r, g, b, family) >= 0.65;
+}
+
+export function pixelDistanceToBackgroundFamily(
+  r: number,
+  g: number,
+  b: number,
+  family: BackgroundFamily
+) {
+  return 1 - scorePixelAgainstFamily(r, g, b, family);
+}
+
+function countOpaqueBorderSamples(imageData: ImageData, stride = 1) {
+  const { data, width } = imageData;
+  let opaqueSamples = 0;
+  let luminanceSum = 0;
+  let luminanceSquaredSum = 0;
+  let whiteScoreSum = 0;
+  let blackScoreSum = 0;
+  let whiteMatches = 0;
+  let blackMatches = 0;
+
+  for (const point of getBorderSamplePoints(imageData, stride)) {
+    const offset = (point.y * width + point.x) * 4;
     const alpha = data[offset + 3];
 
-    if (alpha < 16) return;
+    if (alpha < BORDER_ALPHA_THRESHOLD) {
+      continue;
+    }
 
     opaqueSamples += 1;
     const r = data[offset];
     const g = data[offset + 1];
     const b = data[offset + 2];
+    const luminance = getPixelLuminance(r, g, b);
+    const whiteScore = scorePixelAgainstFamily(r, g, b, "white");
+    const blackScore = scorePixelAgainstFamily(r, g, b, "black");
 
-    if (isNearWhite(r, g, b)) {
-      whiteSamples += 1;
-    } else if (isNearBlack(r, g, b)) {
-      blackSamples += 1;
+    luminanceSum += luminance;
+    luminanceSquaredSum += luminance * luminance;
+    whiteScoreSum += whiteScore;
+    blackScoreSum += blackScore;
+
+    if (whiteScore >= blackScore && whiteScore >= 0.65) {
+      whiteMatches += 1;
     }
-  };
 
-  for (let x = 0; x < width; x += sampleStep) {
-    samplePixel(x, 0);
-    if (height > 1) {
-      samplePixel(x, height - 1);
-    }
-  }
-
-  for (let y = sampleStep; y < height - sampleStep; y += sampleStep) {
-    samplePixel(0, y);
-    if (width > 1) {
-      samplePixel(width - 1, y);
+    if (blackScore > whiteScore && blackScore >= 0.65) {
+      blackMatches += 1;
     }
   }
 
   if (opaqueSamples === 0) {
+    return null;
+  }
+
+  const luminanceMean = luminanceSum / opaqueSamples;
+  const luminanceVariance = Math.max(
+    0,
+    luminanceSquaredSum / opaqueSamples - luminanceMean * luminanceMean
+  );
+
+  return {
+    opaqueSamples,
+    luminanceVariance,
+    whiteAgreement: whiteMatches / opaqueSamples,
+    blackAgreement: blackMatches / opaqueSamples,
+    whiteAverage: whiteScoreSum / opaqueSamples,
+    blackAverage: blackScoreSum / opaqueSamples,
+  };
+}
+
+export function maybeEstimateBackgroundFamilyFromBorder(
+  imageData: ImageData
+): BorderFamilyEstimate | null {
+  const borderStats = countOpaqueBorderSamples(
+    imageData,
+    Math.max(1, Math.floor(Math.min(imageData.width, imageData.height) / 48))
+  );
+
+  if (!borderStats) {
+    return null;
+  }
+
+  const confidenceBonus = clamp01(1 - borderStats.luminanceVariance / 2500);
+  const whiteConfidence =
+    borderStats.whiteAverage * 0.6 +
+    borderStats.whiteAgreement * 0.4 * confidenceBonus;
+  const blackConfidence =
+    borderStats.blackAverage * 0.6 +
+    borderStats.blackAgreement * 0.4 * confidenceBonus;
+
+  const family = whiteConfidence >= blackConfidence ? "white" : "black";
+  const confidence =
+    family === "white" ? whiteConfidence : blackConfidence;
+
+  if (confidence < AUTO_KEY_CONFIDENCE_MEDIUM) {
+    return null;
+  }
+
+  if (
+    confidence < AUTO_KEY_CONFIDENCE_STRONG &&
+    Math.abs(whiteConfidence - blackConfidence) < 0.08
+  ) {
+    return null;
+  }
+
+  return { family, confidence: clamp01(confidence) };
+}
+
+function isKeyedBackgroundMode(
+  mode: ResolvedLogoBackgroundMode
+): mode is Extract<ResolvedLogoBackgroundMode, { type: "keyed" }> {
+  return typeof mode === "object" && mode.type === "keyed";
+}
+
+export function resolveBackgroundMode(
+  imageData: ImageData,
+  mode: LogoBackgroundMode | ResolvedLogoBackgroundMode
+): ResolvedLogoBackgroundMode {
+  if (typeof mode === "object") {
+    return mode;
+  }
+
+  if (mode === "none") {
     return "none";
   }
 
-  let isBackgroundDark = false;
+  if (mode === "white" || mode === "black") {
+    return {
+      type: "keyed",
+      family: mode,
+      confidence: 1,
+      source: "manual",
+    };
+  }
 
-  if (opaqueSamples > 0) {
-    const whiteRatio = whiteSamples / opaqueSamples;
-    const blackRatio = blackSamples / opaqueSamples;
+  const estimate = maybeEstimateBackgroundFamilyFromBorder(imageData);
+  if (!estimate) {
+    return "none";
+  }
 
-    // When corners clearly show white or black, use the simpler mode
-    // that only strips near-white or near-black pixels (preserving colors)
-    if (whiteRatio >= 0.5) {
-      return "white";
+  return {
+    type: "keyed",
+    family: estimate.family,
+    confidence: estimate.confidence,
+    source: "auto",
+  };
+}
+
+export function createEdgeConnectedBackgroundMask(
+  imageData: ImageData,
+  resolvedMode: ResolvedLogoBackgroundMode,
+  options?: {
+    minForegroundAlpha?: number;
+    seedThreshold?: number;
+    floodThreshold?: number;
+  }
+) {
+  const { width, height, data } = imageData;
+  const mask = new Uint8Array(width * height);
+
+  if (!isKeyedBackgroundMode(resolvedMode)) {
+    return mask;
+  }
+
+  const minAlpha = options?.minForegroundAlpha ?? FOREGROUND_ALPHA_THRESHOLD;
+  const confidencePenalty = clamp01(1 - resolvedMode.confidence);
+  const seedThreshold = options?.seedThreshold ?? 0.66 + confidencePenalty * 0.06;
+  const floodThreshold = options?.floodThreshold ?? 0.58 + confidencePenalty * 0.08;
+  const visited = new Uint8Array(mask.length);
+  const queue: number[] = [];
+
+  const enqueue = (index: number) => {
+    if (visited[index]) {
+      return;
     }
-    if (blackRatio >= 0.5) {
-      return "black";
+
+    visited[index] = 1;
+    mask[index] = 1;
+    queue.push(index);
+  };
+
+  const trySeed = (x: number, y: number) => {
+    const index = y * width + x;
+    const offset = index * 4;
+    const alpha = data[offset + 3];
+
+    if (alpha < minAlpha) {
+      return;
+    }
+
+    const r = data[offset];
+    const g = data[offset + 1];
+    const b = data[offset + 2];
+    const score = 1 - pixelDistanceToBackgroundFamily(r, g, b, resolvedMode.family);
+
+    if (score >= seedThreshold) {
+      enqueue(index);
+    }
+  };
+
+  for (const point of getBorderSamplePoints(imageData, 1)) {
+    trySeed(point.x, point.y);
+  }
+
+  const neighborOffsets = [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ];
+
+  for (let head = 0; head < queue.length; head += 1) {
+    const index = queue[head];
+    const x = index % width;
+    const y = Math.floor(index / width);
+
+    for (const [offsetX, offsetY] of neighborOffsets) {
+      const neighborX = x + offsetX;
+      const neighborY = y + offsetY;
+
+      if (
+        neighborX < 0 ||
+        neighborX >= width ||
+        neighborY < 0 ||
+        neighborY >= height
+      ) {
+        continue;
+      }
+
+      const neighborIndex = neighborY * width + neighborX;
+      if (visited[neighborIndex]) {
+        continue;
+      }
+
+      const neighborOffset = neighborIndex * 4;
+      if (data[neighborOffset + 3] < minAlpha) {
+        continue;
+      }
+
+      const r = data[neighborOffset];
+      const g = data[neighborOffset + 1];
+      const b = data[neighborOffset + 2];
+      const score = 1 - pixelDistanceToBackgroundFamily(
+        r,
+        g,
+        b,
+        resolvedMode.family
+      );
+
+      if (score >= floodThreshold) {
+        enqueue(neighborIndex);
+      }
     }
   }
 
-  // Fallback to Otsu for ambiguous backgrounds (e.g. photos, gradients)
-  const threshold = computeOtsuThreshold(imageData);
+  return mask;
+}
 
-  let darkPixels = 0;
-  let brightPixels = 0;
+function getForegroundBounds(imageData: ImageData) {
+  const { data, width, height } = imageData;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (data[offset + 3] === 0) {
+        continue;
+      }
+
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+
+  if (maxX < 0 || maxY < 0) {
+    return null;
+  }
+
+  return { minX, minY, maxX, maxY };
+}
+
+export function refineForegroundEdges(
+  imageData: ImageData,
+  backgroundMask: Uint8Array,
+  options?: CleanLogoArtworkOptions
+) {
+  if (!options?.edgeSoftness || options.edgeSoftness <= 0) {
+    return cloneImageData(imageData);
+  }
+
+  const { data, width, height } = imageData;
+  const output = cloneImageData(imageData);
+  const softness = clamp01(options.edgeSoftness);
+  const boost = 1 + softness * 0.12;
+
+  const isBackgroundNeighbor = (x: number, y: number) => {
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      const sampleY = y + offsetY;
+      if (sampleY < 0 || sampleY >= height) {
+        continue;
+      }
+
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        const sampleX = x + offsetX;
+        if (sampleX < 0 || sampleX >= width) {
+          continue;
+        }
+
+        if (backgroundMask[sampleY * width + sampleX]) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      const offset = index * 4;
+      if (backgroundMask[index] || data[offset + 3] === 0) {
+        continue;
+      }
+
+      if (!isBackgroundNeighbor(x, y)) {
+        continue;
+      }
+
+      const alpha = data[offset + 3];
+      const liftedAlpha = Math.min(
+        255,
+        Math.round(255 - (255 - alpha) / boost)
+      );
+
+      output.data[offset + 3] = Math.max(alpha, liftedAlpha);
+    }
+  }
+
+  return output;
+}
+
+function applyBackgroundMaskToImageData(
+  imageData: ImageData,
+  backgroundMask: Uint8Array
+) {
+  const output = cloneImageData(imageData);
+
+  for (let i = 0; i < backgroundMask.length; i += 1) {
+    if (!backgroundMask[i]) {
+      continue;
+    }
+
+    output.data[i * 4 + 3] = 0;
+  }
+
+  return output;
+}
+
+export function cleanLogoArtworkImageData(
+  imageData: ImageData,
+  mode: LogoBackgroundMode | ResolvedLogoBackgroundMode,
+  options: CleanLogoArtworkOptions = {}
+): CleanLogoArtworkResult {
+  const minForegroundAlpha =
+    options.minForegroundAlpha ?? FOREGROUND_ALPHA_THRESHOLD;
+  const resolvedMode = resolveBackgroundMode(imageData, mode);
+  const cloned = cloneImageData(imageData);
+
+  if (resolvedMode === "none") {
+    return {
+      imageData: cloned,
+      resolvedMode,
+      shouldFilterBackground: false,
+      backgroundMask: new Uint8Array(cloned.width * cloned.height),
+      foregroundBounds: getForegroundBounds(cloned),
+    };
+  }
+
+  const backgroundMask = createEdgeConnectedBackgroundMask(cloned, resolvedMode, {
+    minForegroundAlpha,
+  });
+  const masked = applyBackgroundMaskToImageData(cloned, backgroundMask);
+  const refined = refineForegroundEdges(masked, backgroundMask, options);
+
+  return {
+    imageData: refined,
+    resolvedMode,
+    shouldFilterBackground: true,
+    backgroundMask,
+    foregroundBounds: getForegroundBounds(refined),
+  };
+}
+
+export function createColorTraceImageData(
+  cleaned: CleanLogoArtworkResult
+) {
+  return {
+    imageData: cloneImageData(cleaned.imageData),
+    resolvedMode: cleaned.resolvedMode,
+    shouldFilterBackground: cleaned.shouldFilterBackground,
+    backgroundMask: cleaned.backgroundMask,
+  };
+}
+
+function getForegroundLuminanceStats(imageData: ImageData) {
+  const { data } = imageData;
+  let count = 0;
+  let sum = 0;
+
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i+3] > 0) {
-      const l = getPixelLuminance(data[i], data[i+1], data[i+2]);
-      if (l < threshold) darkPixels++;
-      else brightPixels++;
+    const alpha = data[i + 3];
+    if (alpha < FOREGROUND_ALPHA_THRESHOLD) {
+      continue;
     }
-  }
-  // Assume background is whatever color covers the vast majority of the image
-  isBackgroundDark = darkPixels > brightPixels;
 
-  return { type: "otsu", threshold, isBackgroundDark };
+    const composite = alpha / 255;
+    const r = data[i] * composite + 255 * (1 - composite);
+    const g = data[i + 1] * composite + 255 * (1 - composite);
+    const b = data[i + 2] * composite + 255 * (1 - composite);
+    sum += getPixelLuminance(r, g, b);
+    count += 1;
+  }
+
+  return count === 0 ? null : sum / count;
+}
+
+export function createMonochromeTraceImageData(
+  cleaned: CleanLogoArtworkResult,
+  options?: {
+    contrast?: number;
+  }
+) {
+  const { imageData, backgroundMask } = cleaned;
+  const output = new ImageData(imageData.width, imageData.height);
+  const foregroundMean = getForegroundLuminanceStats(imageData) ?? 128;
+  const invert = foregroundMean > 140;
+  const contrast = options?.contrast ?? MONOCHROME_CONTRAST;
+
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    const alpha = imageData.data[i + 3];
+    if (alpha < FOREGROUND_ALPHA_THRESHOLD || backgroundMask[i / 4]) {
+      output.data[i] = 255;
+      output.data[i + 1] = 255;
+      output.data[i + 2] = 255;
+      output.data[i + 3] = 255;
+      continue;
+    }
+
+    const composite = alpha / 255;
+    const r = imageData.data[i] * composite + 255 * (1 - composite);
+    const g = imageData.data[i + 1] * composite + 255 * (1 - composite);
+    const b = imageData.data[i + 2] * composite + 255 * (1 - composite);
+    const luminance = getPixelLuminance(r, g, b);
+    const adjusted = invert ? 255 - luminance : luminance;
+    const contrasted = clamp01(adjusted / 255) * 255;
+    const remapped = clamp01(((contrasted - 128) * contrast + 128) / 255) * 255;
+    const gray = Math.max(0, Math.min(255, Math.round(remapped)));
+
+    output.data[i] = gray;
+    output.data[i + 1] = gray;
+    output.data[i + 2] = gray;
+    output.data[i + 3] = 255;
+  }
+
+  return {
+    imageData: output,
+    resolvedMode: cleaned.resolvedMode,
+    shouldFilterBackground: cleaned.shouldFilterBackground,
+    backgroundMask: cleaned.backgroundMask,
+  };
+}
+
+export function createTraceImageData(
+  imageData: ImageData,
+  mode: LogoBackgroundMode | ResolvedLogoBackgroundMode,
+  renderMode: TraceRenderMode = "color",
+  options: CleanLogoArtworkOptions = {}
+) {
+  const cleaned = cleanLogoArtworkImageData(imageData, mode, options);
+  return renderMode === "bw"
+    ? createMonochromeTraceImageData(cleaned)
+    : createColorTraceImageData(cleaned);
 }
 
 export function removeImageBackground(
   imageData: ImageData,
   mode: LogoBackgroundMode | ResolvedLogoBackgroundMode
 ) {
-  const resolvedMode = (typeof mode === "object" || mode !== "auto")
-    ? (mode as ResolvedLogoBackgroundMode)
-    : resolveBackgroundMode(imageData, "auto");
-  const output = cloneImageData(imageData);
-
-  if (resolvedMode === "none") {
-    return { imageData: output, resolvedMode };
-  }
-
-  if (typeof resolvedMode === "object" && resolvedMode.type === "otsu") {
-    const otsuThreshold = resolvedMode.threshold;
-    const isBackgroundDark = resolvedMode.isBackgroundDark;
-    
-    for (let i = 0; i < output.data.length; i += 4) {
-      if (output.data[i + 3] === 0) continue;
-      const l = getPixelLuminance(output.data[i], output.data[i + 1], output.data[i + 2]);
-      
-      if (isBackgroundDark) {
-        // Strip dark background
-        if (l <= otsuThreshold) output.data[i + 3] = 0;
-      } else {
-        // Strip bright background
-        if (l >= otsuThreshold) output.data[i + 3] = 0;
-      }
-    }
-    return { imageData: output, resolvedMode };
-  }
-
-  for (let i = 0; i < output.data.length; i += 4) {
-    const alpha = output.data[i + 3];
-
-    if (alpha === 0) {
-      continue;
-    }
-
-    if (
-      isBackgroundMatch(
-        output.data[i],
-        output.data[i + 1],
-        output.data[i + 2],
-        resolvedMode as ResolvedLogoBackgroundMode
-      )
-    ) {
-      output.data[i + 3] = 0;
-    }
-  }
-
-  return { imageData: output, resolvedMode };
+  const cleaned = cleanLogoArtworkImageData(imageData, mode);
+  return {
+    imageData: cleaned.imageData,
+    resolvedMode: cleaned.resolvedMode,
+  };
 }
 
 export function normalizeLogoArtworkImageData(
@@ -367,38 +715,9 @@ export function normalizeLogoArtworkImageData(
   mode: LogoBackgroundMode | ResolvedLogoBackgroundMode,
   minAlpha = FOREGROUND_ALPHA_THRESHOLD
 ) {
-  const { imageData: keyedImageData, resolvedMode } = removeImageBackground(
-    imageData,
-    mode
-  );
-  const output = new ImageData(keyedImageData.width, keyedImageData.height);
-  const mask = createForegroundMask(keyedImageData, minAlpha);
-  let hasTransparentPixels = false;
-
-  for (let i = 0; i < mask.length; i += 1) {
-    const offset = i * 4;
-    const isForeground = mask[i] === 1;
-
-    if (!isForeground) {
-      output.data[offset] = 0;
-      output.data[offset + 1] = 0;
-      output.data[offset + 2] = 0;
-      output.data[offset + 3] = 0;
-      hasTransparentPixels = true;
-      continue;
-    }
-
-    output.data[offset] = keyedImageData.data[offset];
-    output.data[offset + 1] = keyedImageData.data[offset + 1];
-    output.data[offset + 2] = keyedImageData.data[offset + 2];
-    output.data[offset + 3] = 255;
-  }
-
-  return {
-    imageData: output,
-    resolvedMode,
-    shouldFilterBackground: resolvedMode !== "none" || hasTransparentPixels,
-  };
+  return cleanLogoArtworkImageData(imageData, mode, {
+    minForegroundAlpha: minAlpha,
+  });
 }
 
 export function createLineArtImageData(
@@ -406,26 +725,15 @@ export function createLineArtImageData(
   mode: LogoBackgroundMode | ResolvedLogoBackgroundMode,
   minAlpha = FOREGROUND_ALPHA_THRESHOLD
 ) {
-  const normalized = normalizeLogoArtworkImageData(imageData, mode, minAlpha);
-  const output = new ImageData(
-    normalized.imageData.width,
-    normalized.imageData.height
-  );
-
-  for (let i = 0; i < normalized.imageData.data.length; i += 4) {
-    const alpha = normalized.imageData.data[i + 3];
-    const isForeground = alpha >= minAlpha;
-
-    output.data[i] = isForeground ? 0 : 255;
-    output.data[i + 1] = isForeground ? 0 : 255;
-    output.data[i + 2] = isForeground ? 0 : 255;
-    output.data[i + 3] = 255;
-  }
+  const cleaned = cleanLogoArtworkImageData(imageData, mode, {
+    minForegroundAlpha: minAlpha,
+  });
 
   return {
-    imageData: output,
-    resolvedMode: normalized.resolvedMode,
-    shouldFilterBackground: normalized.shouldFilterBackground,
+    imageData: createMonochromeTraceImageData(cleaned).imageData,
+    resolvedMode: cleaned.resolvedMode,
+    shouldFilterBackground: cleaned.shouldFilterBackground,
+    backgroundMask: cleaned.backgroundMask,
   };
 }
 

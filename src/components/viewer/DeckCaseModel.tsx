@@ -10,6 +10,7 @@ import {
   getContinuousPanelArtworkSlices,
   type LidPanelGeometry,
 } from "@/lib/deck-case-artwork";
+import { createLogoPreviewBlobUrl } from "@/lib/logo-svg-preview";
 import { CASE_MODELS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 
@@ -31,18 +32,11 @@ async function loadLogoPreviewImage(logo: {
   originalFileName: string | null;
   color: string | null;
 }) {
-  const isSvgLogo = logo.originalFileName?.toLowerCase().endsWith(".svg");
-
-  if (logo.vectorSvg && isSvgLogo) {
-    let svgContent = logo.vectorSvg;
-    if (logo.color) {
-      const styleInjection = `<style>path:not([fill="#FFFFFF"]):not([fill="#ffffff"]):not([fill="none"]) { fill: ${logo.color} !important; }</style>`;
-      svgContent = svgContent.replace(/<svg[^>]*>/i, (match) => `${match}${styleInjection}`);
-    }
-
-    const objectUrl = URL.createObjectURL(
-      new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" })
-    );
+  if (logo.vectorSvg) {
+    const objectUrl = createLogoPreviewBlobUrl(logo.vectorSvg, {
+      color: logo.color,
+      sourceKind: "svg",
+    });
 
     try {
       return await loadImageSource(objectUrl);
@@ -117,7 +111,8 @@ export default function DeckCaseModel() {
   const clipsColor = useDesignStore((s) => s.clipsColor);
   const logo = useDesignStore((s) => s.logo);
   const artworkStyle = useDesignStore((s) => s.artworkStyle);
-  const { dataUrl, rasterSourceDataUrl, vectorSvg, color, originalFileName } = logo;
+  const { dataUrl, rasterSourceDataUrl, vectorSvg, color, originalFileName } =
+    logo;
 
   const rawGeometry = useLoader(
     STLLoader,

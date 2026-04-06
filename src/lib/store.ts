@@ -6,8 +6,32 @@ import type {
   ExportQuality,
   LogoConfig,
 } from "@/types/design";
+import {
+  DEFAULT_TRACE_PRESET,
+  DEFAULT_TRACE_STYLE,
+  getDefaultTraceSettings,
+  normalizeTraceSettings,
+} from "@/lib/trace-settings";
+import { resolveLogoSourceKind } from "@/lib/logo-svg-preview";
 
 const LOGO_VERTICAL_CENTER_OFFSET = -40;
+
+function createDefaultLogoConfig(): LogoConfig {
+  return {
+    dataUrl: null,
+    rasterSourceDataUrl: null,
+    vectorSvg: null,
+    originalFileName: null,
+    sourceKind: null,
+    traceSettings: getDefaultTraceSettings(DEFAULT_TRACE_STYLE, DEFAULT_TRACE_PRESET),
+    aspectRatio: 1,
+    backgroundMode: "auto",
+    processedBackgroundMode: null,
+    position: { x: 0, y: LOGO_VERTICAL_CENTER_OFFSET },
+    scale: 1,
+    color: null,
+  };
+}
 
 interface DesignStore extends DesignConfig {
   setModel: (model: CaseModelId) => void;
@@ -30,18 +54,7 @@ const DEFAULT_STATE: DesignConfig = {
   clipsColor: "#1A1A1A",
   exportQuality: "balanced",
   artworkStyle: "flat",
-  logo: {
-    dataUrl: null,
-    rasterSourceDataUrl: null,
-    vectorSvg: null,
-    originalFileName: null,
-    aspectRatio: 1,
-    backgroundMode: "auto",
-    processedBackgroundMode: null,
-    position: { x: 0, y: LOGO_VERTICAL_CENTER_OFFSET },
-    scale: 1,
-    color: null,
-  },
+  logo: createDefaultLogoConfig(),
 };
 
 export const useDesignStore = create<DesignStore>((set, get) => ({
@@ -71,18 +84,7 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
 
   clearLogo: () =>
     set({
-      logo: {
-        dataUrl: null,
-        rasterSourceDataUrl: null,
-        vectorSvg: null,
-        originalFileName: null,
-        aspectRatio: 1,
-        backgroundMode: "auto",
-        processedBackgroundMode: null,
-        position: { x: 0, y: LOGO_VERTICAL_CENTER_OFFSET },
-        scale: 1,
-        color: null,
-      },
+      logo: createDefaultLogoConfig(),
     }),
 
   serialize: () => {
@@ -123,12 +125,19 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
       logo: {
         ...state.logo,
         ...config.logo,
+        sourceKind: resolveLogoSourceKind({
+          sourceKind: config.logo?.sourceKind ?? null,
+          originalFileName: config.logo?.originalFileName ?? null,
+          rasterSourceDataUrl: config.logo?.rasterSourceDataUrl ?? null,
+          vectorSvg: config.logo?.vectorSvg ?? null,
+        }),
         rasterSourceDataUrl: config.logo?.rasterSourceDataUrl ?? null,
         vectorSvg: config.logo?.vectorSvg ?? null,
         aspectRatio: config.logo?.aspectRatio ?? 1,
         backgroundMode: config.logo?.backgroundMode ?? "auto",
         processedBackgroundMode: config.logo?.processedBackgroundMode ?? null,
         color: config.logo?.color ?? null,
+        traceSettings: normalizeTraceSettings(config.logo?.traceSettings),
       },
     })),
 
