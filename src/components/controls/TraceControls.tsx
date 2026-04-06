@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FILAMENT_PALETTE } from "@/lib/filaments";
 import { useDesignStore } from "@/lib/store";
 import {
   getDefaultTraceSettings,
@@ -57,7 +58,8 @@ type TraceSliderField =
   | "spliceThreshold"
   | "pathPrecision"
   | "colorPrecision"
-  | "layerDifference";
+  | "layerDifference"
+  | "maxColors";
 
 type SliderConfig = {
   field: TraceSliderField;
@@ -124,6 +126,14 @@ const TRACE_SLIDERS: SliderConfig[] = [
     max: 64,
     step: 1,
     description: "Only used for color traces.",
+  },
+  {
+    field: "maxColors",
+    label: "Max Colors",
+    min: 2,
+    max: 12,
+    step: 1,
+    description: "Reduce nearby shades before tracing.",
   },
 ];
 
@@ -217,6 +227,9 @@ function SliderRow({
 
 export default function TraceControls() {
   const logo = useDesignStore((state) => state.logo);
+  const panelColors = useDesignStore((state) => state.panelColors);
+  const bottomColor = useDesignStore((state) => state.bottomColor);
+  const clipsColor = useDesignStore((state) => state.clipsColor);
   const setLogo = useDesignStore((state) => state.setLogo);
   const sourceKind = resolveLogoSourceKind(logo);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -239,6 +252,7 @@ export default function TraceControls() {
         ...getDefaultTraceSettings(style, nextPreset),
         style,
         preset: nextPreset,
+        paletteColors: logo.traceSettings.paletteColors,
       },
     });
   };
@@ -249,6 +263,7 @@ export default function TraceControls() {
         ...getDefaultTraceSettings(logo.traceSettings.style, preset),
         style: logo.traceSettings.style,
         preset,
+        paletteColors: logo.traceSettings.paletteColors,
       },
     });
   };
@@ -317,6 +332,41 @@ export default function TraceControls() {
         preset: presetMatches ? nextSettings.preset : "custom",
       },
     });
+  };
+
+  const updatePaletteColors = (paletteColors: string[]) => {
+    setLogo({
+      traceSettings: {
+        ...logo.traceSettings,
+        paletteColors,
+        preset: "custom",
+      },
+    });
+  };
+
+  const handlePaletteToggle = (hex: string) => {
+    const paletteColors = logo.traceSettings.paletteColors.includes(hex)
+      ? logo.traceSettings.paletteColors.filter((color) => color !== hex)
+      : [...logo.traceSettings.paletteColors, hex];
+
+    updatePaletteColors(paletteColors);
+  };
+
+  const handleUseCurrentDesignColors = () => {
+    const paletteColors = Array.from(
+      new Set([
+        ...panelColors,
+        bottomColor,
+        clipsColor,
+        ...(logo.color ? [logo.color] : []),
+      ])
+    );
+
+    updatePaletteColors(paletteColors);
+  };
+
+  const handleClearPaletteColors = () => {
+    updatePaletteColors([]);
   };
 
   return (
@@ -446,10 +496,89 @@ export default function TraceControls() {
                 onChange={handleCurveModeChange}
               />
 
+              {logo.traceSettings.style === "color" ? (
+                <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-medium text-zinc-700">
+                      Palette Colors
+                    </label>
+                    <span className="text-xs text-zinc-500">
+                      Optional exact swatches
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {FILAMENT_PALETTE.map((filament) => {
+                      const isSelected = logo.traceSettings.paletteColors.includes(
+                        filament.hex
+                      );
+
+                      return (
+                        <button
+                          key={filament.hex}
+                          type="button"
+                          onClick={() => handlePaletteToggle(filament.hex)}
+                          title={filament.name}
+                          className={`aspect-square w-full rounded-lg border-2 transition-all hover:scale-105 ${
+                            isSelected
+                              ? "border-zinc-900 ring-2 ring-zinc-400"
+                              : "border-zinc-200"
+                          }`}
+                          style={{ backgroundColor: filament.hex }}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleUseCurrentDesignColors}
+                      className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-900"
+                    >
+                      Use Current Design Colors
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearPaletteColors}
+                      className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-900"
+                    >
+                      Auto Palette
+                    </button>
+                  </div>
+                  {logo.traceSettings.paletteColors.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {logo.traceSettings.paletteColors.map((color) => {
+                        const filament =
+                          FILAMENT_PALETTE.find((item) => item.hex === color) ?? null;
+
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => handlePaletteToggle(color)}
+                            className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700"
+                          >
+                            <span
+                              className="h-3 w-3 rounded-full border border-zinc-300"
+                              style={{ backgroundColor: color }}
+                            />
+                            {filament?.name ?? color}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <p className="text-xs text-zinc-500">
+                    Pick exact swatches to force the trace into a fixed palette,
+                    or leave this empty to let Max Colors auto-pick the palette.
+                  </p>
+                </div>
+              ) : null}
+
               {TRACE_SLIDERS.filter((slider) =>
                 logo.traceSettings.style === "lineart"
                   ? slider.field !== "colorPrecision" &&
-                    slider.field !== "layerDifference"
+                    slider.field !== "layerDifference" &&
+                    slider.field !== "maxColors"
                   : true
               ).filter((slider) =>
                 logo.traceSettings.curveMode === "pixel"

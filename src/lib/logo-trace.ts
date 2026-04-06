@@ -6,6 +6,10 @@ import {
   createColorTraceImageData,
   createMonochromeTraceImageData,
 } from "@/lib/logo-background";
+import {
+  applyTraceColorLimit,
+  shouldUseHardEdgeTraceScaling,
+} from "@/lib/trace-palette";
 import { traceRasterDataUrlToSvg } from "@/lib/raster-trace-client";
 import { useDesignStore } from "@/lib/store";
 import { resolveLogoSourceKind } from "@/lib/logo-svg-preview";
@@ -63,7 +67,8 @@ async function readImageDataUrlAsCanvas(dataUrl: string) {
 async function renderImageDataToDataUrl(
   imageData: ImageData,
   targetWidth: number,
-  targetHeight: number
+  targetHeight: number,
+  smoothing = true
 ) {
   const sourceCanvas = document.createElement("canvas");
   sourceCanvas.width = imageData.width;
@@ -89,7 +94,11 @@ async function renderImageDataToDataUrl(
     throw new Error("Failed to scale traced raster source");
   }
 
-  setHighQualitySmoothing(targetContext);
+  if (smoothing) {
+    setHighQualitySmoothing(targetContext);
+  } else {
+    targetContext.imageSmoothingEnabled = false;
+  }
   targetContext.clearRect(0, 0, targetWidth, targetHeight);
   targetContext.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
   return targetCanvas.toDataURL("image/png");
@@ -98,7 +107,7 @@ async function renderImageDataToDataUrl(
 export async function processRasterSourceDataUrl(
   dataUrl: string,
   backgroundMode: LogoBackgroundMode,
-  traceSettings?: Pick<TraceSettings, "style"> | null
+  traceSettings?: TraceSettings | null
 ) {
   const { canvas, sourceImageData } = await readImageDataUrlAsCanvas(dataUrl);
   const cleaned = cleanLogoArtworkImageData(sourceImageData, backgroundMode, {
@@ -106,10 +115,12 @@ export async function processRasterSourceDataUrl(
   });
   const previewImageData = createColorTraceImageData(cleaned).imageData;
   const traceRenderMode = getTraceRenderMode(traceSettings);
+  const limitedColorImageData = applyTraceColorLimit(previewImageData, traceSettings);
+  const useHardEdgeScaling = shouldUseHardEdgeTraceScaling(traceSettings);
   const traceImageData =
     traceRenderMode === "bw"
       ? createMonochromeTraceImageData(cleaned).imageData
-      : previewImageData;
+      : limitedColorImageData;
 
   const shortestSide = Math.min(canvas.width, canvas.height);
   const upscaleRatio =
@@ -121,14 +132,16 @@ export async function processRasterSourceDataUrl(
 
   return {
     previewDataUrl: await renderImageDataToDataUrl(
-      previewImageData,
+      traceRenderMode === "bw" ? previewImageData : limitedColorImageData,
       targetWidth,
-      targetHeight
+      targetHeight,
+      !useHardEdgeScaling
     ),
     traceDataUrl: await renderImageDataToDataUrl(
       traceImageData,
       targetWidth,
-      targetHeight
+      targetHeight,
+      !useHardEdgeScaling
     ),
     resolvedBackgroundMode: cleaned.resolvedMode,
     shouldFilterBackground: cleaned.shouldFilterBackground,
