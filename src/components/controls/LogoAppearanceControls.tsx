@@ -18,24 +18,24 @@ export default function LogoAppearanceControls() {
     <div className="space-y-3">
       <div className="space-y-2">
         <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+          <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
             Logo Color
-          </h3>
-          <p className="mt-1 text-xs text-zinc-500">
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
             Choose the display color for the traced SVG. Direct SVG uploads and vtracer output both follow this swatch.
           </p>
         </div>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="flex flex-wrap gap-2">
           {FILAMENT_PALETTE.map((filament) => (
             <button
               key={filament.hex}
               type="button"
               onClick={() => setLogo({ color: filament.hex })}
               title={filament.name}
-              className={`aspect-square w-full rounded-lg border-2 transition-all hover:scale-110 ${
+              className={`h-5 w-5 border transition-all hover:scale-110 ${
                 logo.color === filament.hex
-                  ? "border-zinc-900 ring-2 ring-zinc-400"
-                  : "border-zinc-200"
+                  ? "border-slate-900"
+                  : "border-slate-200"
               }`}
               style={{ backgroundColor: filament.hex }}
             />
@@ -45,10 +45,10 @@ export default function LogoAppearanceControls() {
 
       <div className="space-y-2">
         <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+          <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
             Artwork Style
-          </h3>
-          <p className="mt-1 text-xs text-zinc-500">
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
             Flat keeps the artwork flush. Emboss raises it above the lid.
           </p>
         </div>
@@ -62,10 +62,10 @@ export default function LogoAppearanceControls() {
               key={option.value}
               type="button"
               onClick={() => setArtworkStyle(option.value)}
-              className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+              className={`border px-3 py-2 text-sm font-medium transition-colors ${
                 artworkStyle === option.value
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+                  ? "border-black bg-black text-white"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
               }`}
             >
               {option.label}

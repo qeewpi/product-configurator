@@ -6,7 +6,7 @@ export type SidebarMode = "configure" | "svgPreview";
 
 const MODES: Array<{ value: SidebarMode; label: string }> = [
   { value: "configure", label: "Configure" },
-  { value: "svgPreview", label: "SVG Preview" },
+  { value: "svgPreview", label: "Export" },
 ];
 
 export default function SidebarModeToggle({
@@ -45,39 +45,37 @@ export default function SidebarModeToggle({
 
   return (
     <div
-      className="rounded-full border border-zinc-200 bg-zinc-100 p-1"
+      className="flex h-11 overflow-hidden border border-slate-200 bg-slate-100 p-0.5"
       role="tablist"
       aria-label="Sidebar mode"
       onKeyDown={handleKeyDown}
     >
-      <div className="grid grid-cols-2 gap-1">
-        {MODES.map((mode, index) => {
-          const isSelected = mode.value === value;
+      {MODES.map((mode, index) => {
+        const isSelected = mode.value === value;
 
-          return (
-            <button
-              key={mode.value}
-              ref={(button) => {
-                buttonRefs.current[index] = button;
-              }}
-              type="button"
-              role="tab"
-              id={`${mode.value}-tab`}
-              aria-selected={isSelected}
-              aria-controls={`${mode.value}-panel`}
-              tabIndex={isSelected ? 0 : -1}
-              onClick={() => onChange(mode.value)}
-              className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
-                isSelected
-                  ? "bg-white text-zinc-900 shadow-sm"
-                  : "text-zinc-600 hover:text-zinc-900"
-              }`}
-            >
-              {mode.label}
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <button
+            key={mode.value}
+            ref={(button) => {
+              buttonRefs.current[index] = button;
+            }}
+            type="button"
+            role="tab"
+            id={`${mode.value}-tab`}
+            aria-selected={isSelected}
+            aria-controls={`${mode.value}-panel`}
+            tabIndex={isSelected ? 0 : -1}
+            onClick={() => onChange(mode.value)}
+            className={`flex h-full flex-1 items-center justify-center px-4 text-sm transition-all ${
+              isSelected
+                ? "bg-white font-semibold text-slate-900"
+                : "font-medium text-slate-500 hover:bg-slate-200/50"
+            }`}
+          >
+            {mode.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

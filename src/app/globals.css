@@ -2,25 +2,75 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-headline: var(--font-manrope), "Manrope", sans-serif;
+  --font-body: var(--font-inter), "Inter", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Industrial Mono — zero radius, zero shadow */
+* {
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), Inter, sans-serif;
+}
+
+/* Canvas dot-grid texture */
+.canvas-grid {
+  background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Ultra-thin sidebar scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+/* Material Symbols baseline */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Industrial square radio inputs */
+input[type="radio"].industrial-radio {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #64748b;
+  background-color: transparent;
+  display: inline-grid;
+  place-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+input[type="radio"].industrial-radio::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background-color: #000;
+  transform: scale(0);
+  transition: 120ms transform ease-in-out;
+}
+input[type="radio"].industrial-radio:checked::before {
+  transform: scale(1);
+}
+input[type="radio"].industrial-radio:checked {
+  border-color: #000;
 }

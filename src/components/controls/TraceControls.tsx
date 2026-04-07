@@ -161,12 +161,12 @@ function SegmentedButtonGroup<T extends string>({
   return (
     <div className="space-y-2">
       <div>
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-700">
+        <h4 className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
           {label}
         </h4>
       </div>
       <div
-        className="grid rounded-full bg-zinc-100 p-1"
+        className="grid border border-slate-200 bg-slate-100 p-0.5"
         role="radiogroup"
         aria-label={label}
         style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
@@ -181,10 +181,10 @@ function SegmentedButtonGroup<T extends string>({
               aria-checked={isSelected}
               onClick={() => onChange(item.value)}
               tabIndex={isSelected ? 0 : -1}
-              className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
                 isSelected
-                  ? "bg-white text-zinc-900 shadow-sm"
-                  : "text-zinc-600 hover:text-zinc-900"
+                  ? "bg-white text-slate-900"
+                  : "text-slate-500 hover:bg-slate-200/50"
               }`}
             >
               {item.label}
@@ -206,10 +206,10 @@ function SliderRow({
   onChange: (next: number) => void;
 }) {
   return (
-    <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white px-4 py-3">
-      <label className="flex items-center justify-between gap-3 text-sm font-medium text-zinc-700">
+    <div className="space-y-2 border border-slate-200 bg-white px-4 py-3">
+      <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
         <span>{slider.label}</span>
-        <span className="tabular-nums text-zinc-500">{value}</span>
+        <span className="tabular-nums text-slate-500">{value}</span>
       </label>
       <input
         type="range"
@@ -218,9 +218,9 @@ function SliderRow({
         step={slider.step}
         value={value}
         onChange={(event) => onChange(Number.parseFloat(event.target.value))}
-        className="w-full accent-zinc-700"
+        className="w-full accent-slate-700"
       />
-      <p className="text-xs text-zinc-500">{slider.description}</p>
+      <p className="text-xs text-slate-500">{slider.description}</p>
     </div>
   );
 }
@@ -375,10 +375,10 @@ export default function TraceControls() {
         <>
           <div className="space-y-2">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+              <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
                 Background Removal
-              </h3>
-              <p className="mt-1 text-xs text-zinc-500">
+              </label>
+              <p className="mt-1 text-xs text-slate-500">
                 Choose the border-connected backdrop family to remove. Auto
                 only removes it when the border evidence is strong enough.
               </p>
@@ -390,10 +390,10 @@ export default function TraceControls() {
                   key={option.value}
                   type="button"
                   onClick={() => setLogo({ backgroundMode: option.value })}
-                  className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`border px-3 py-2 text-sm font-medium transition-colors ${
                     logo.backgroundMode === option.value
-                      ? "border-zinc-900 bg-zinc-900 text-white"
-                      : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+                      ? "border-black bg-black text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                   }`}
                 >
                   {option.label}
@@ -420,17 +420,17 @@ export default function TraceControls() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-700">
+              <h4 className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
                 Trace Preset
               </h4>
               {logo.traceSettings.preset === "custom" ? (
-                <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white">
+                <span className="bg-black px-2.5 py-1 text-[11px] font-medium text-white">
                   Custom
                 </span>
               ) : null}
             </div>
             <div
-              className="grid rounded-full bg-zinc-100 p-1"
+              className="grid border border-slate-200 bg-slate-100 p-0.5"
               role="radiogroup"
               aria-label="Trace Preset"
               style={{
@@ -447,10 +447,10 @@ export default function TraceControls() {
                     aria-checked={isSelected}
                     onClick={() => handlePresetChange(item.value)}
                     tabIndex={isSelected ? 0 : -1}
-                    className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`px-3 py-2 text-sm font-medium transition-colors ${
                       isSelected
-                        ? "bg-white text-zinc-900 shadow-sm"
-                        : "text-zinc-600 hover:text-zinc-900"
+                        ? "bg-white text-slate-900"
+                        : "text-slate-500 hover:bg-slate-200/50"
                     }`}
                   >
                     {item.label}
@@ -465,26 +465,14 @@ export default function TraceControls() {
             onToggle={(event) =>
               setAdvancedOpen((event.currentTarget as HTMLDetailsElement).open)
             }
-            className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
+            className="overflow-hidden border border-slate-200 bg-slate-50"
           >
-            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-zinc-700">
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-700">
               <div className="flex items-center justify-between gap-3">
                 <span>Advanced</span>
-                <svg
-                  className={`h-4 w-4 text-zinc-400 transition-transform ${
-                    advancedOpen ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
+                <span className="material-symbols-outlined text-slate-400">
+                  {advancedOpen ? "expand_less" : "expand_more"}
+                </span>
               </div>
             </summary>
 
@@ -497,16 +485,16 @@ export default function TraceControls() {
               />
 
               {logo.traceSettings.style === "color" ? (
-                <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+                <div className="space-y-2 border border-slate-200 bg-white px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <label className="text-sm font-medium text-zinc-700">
+                    <label className="text-sm font-medium text-slate-700">
                       Palette Colors
                     </label>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-slate-500">
                       Optional exact swatches
                     </span>
                   </div>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {FILAMENT_PALETTE.map((filament) => {
                       const isSelected = logo.traceSettings.paletteColors.includes(
                         filament.hex
@@ -518,10 +506,10 @@ export default function TraceControls() {
                           type="button"
                           onClick={() => handlePaletteToggle(filament.hex)}
                           title={filament.name}
-                          className={`aspect-square w-full rounded-lg border-2 transition-all hover:scale-105 ${
+                          className={`h-5 w-5 border transition-all hover:scale-105 ${
                             isSelected
-                              ? "border-zinc-900 ring-2 ring-zinc-400"
-                              : "border-zinc-200"
+                              ? "border-slate-900"
+                              : "border-slate-200"
                           }`}
                           style={{ backgroundColor: filament.hex }}
                         />
@@ -532,14 +520,14 @@ export default function TraceControls() {
                     <button
                       type="button"
                       onClick={handleUseCurrentDesignColors}
-                      className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-900"
+                      className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
                     >
                       Use Current Design Colors
                     </button>
                     <button
                       type="button"
                       onClick={handleClearPaletteColors}
-                      className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-900"
+                      className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
                     >
                       Auto Palette
                     </button>
@@ -555,10 +543,10 @@ export default function TraceControls() {
                             key={color}
                             type="button"
                             onClick={() => handlePaletteToggle(color)}
-                            className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700"
+                            className="inline-flex items-center gap-2 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700"
                           >
                             <span
-                              className="h-3 w-3 rounded-full border border-zinc-300"
+                              className="h-3 w-3 border border-slate-300"
                               style={{ backgroundColor: color }}
                             />
                             {filament?.name ?? color}
@@ -567,7 +555,7 @@ export default function TraceControls() {
                       })}
                     </div>
                   ) : null}
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-slate-500">
                     Pick exact swatches to force the trace into a fixed palette,
                     or leave this empty to let Max Colors auto-pick the palette.
                   </p>
@@ -599,7 +587,7 @@ export default function TraceControls() {
           </details>
         </>
       ) : (
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
+        <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           Uploaded SVGs are previewed directly. Tracing controls are only needed
           for raster uploads.
         </div>

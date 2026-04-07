@@ -21,10 +21,10 @@ function SourceBadge({
 }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${
+      className={`inline-flex items-center px-2.5 py-1 text-[11px] font-medium ${
         tone === "accent"
-          ? "bg-zinc-900 text-white"
-          : "bg-zinc-100 text-zinc-700"
+          ? "bg-black text-white"
+          : "bg-slate-100 text-slate-700"
       }`}
     >
       {label}
@@ -81,7 +81,7 @@ function PreviewArtwork({
         };
 
   const previewFrameClasses =
-    "relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm";
+    "relative overflow-hidden border border-slate-200 bg-white";
   const frameStyle = {
     backgroundImage:
       "linear-gradient(45deg, rgba(228, 228, 231, 0.95) 25%, transparent 25%, transparent 75%, rgba(228, 228, 231, 0.95) 75%, rgba(228, 228, 231, 0.95)), linear-gradient(45deg, rgba(228, 228, 231, 0.95) 25%, transparent 25%, transparent 75%, rgba(228, 228, 231, 0.95) 75%, rgba(228, 228, 231, 0.95))",
@@ -94,12 +94,12 @@ function PreviewArtwork({
       <div className="flex min-h-[320px] items-center justify-center p-4">
         {tracePreview.status === "loading" && !logo.vectorSvg ? (
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="h-10 w-10 animate-spin rounded-full border-4 border-zinc-200 border-t-zinc-900" />
+            <div className="h-10 w-10 animate-spin border-4 border-slate-200 border-t-black" />
             <div>
-              <p className="text-sm font-medium text-zinc-700">
+              <p className="text-sm font-medium text-slate-700">
                 Updating SVG preview...
               </p>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-slate-500">
                 The traced SVG will appear here once the new pass finishes.
               </p>
             </div>
@@ -124,7 +124,7 @@ function PreviewArtwork({
 
             {tracePreview.status === "loading" ? (
               <div className="absolute inset-0 flex items-start justify-end p-3">
-                <div className="rounded-full border border-zinc-200 bg-white/90 px-3 py-1 text-xs text-zinc-600 shadow-sm backdrop-blur">
+                <div className="border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600 backdrop-blur">
                   Updating SVG preview...
                 </div>
               </div>
@@ -132,7 +132,7 @@ function PreviewArtwork({
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-400">
+            <div className="flex h-12 w-12 items-center justify-center bg-slate-100 text-slate-400">
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -147,12 +147,12 @@ function PreviewArtwork({
               </svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-zinc-700">
+              <p className="text-sm font-medium text-slate-700">
                 {tracePreview.status === "error"
                   ? "Preview update failed"
                   : "Waiting for SVG preview"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-slate-500">
                 {tracePreview.status === "error"
                   ? "Fix the trace settings or upload a new source to continue."
                   : "The traced SVG will appear here after the first pass."}
@@ -162,15 +162,15 @@ function PreviewArtwork({
         )}
       </div>
 
-      <div className="flex items-start justify-between gap-3 border-t border-zinc-200 bg-white px-4 py-3">
+      <div className="flex items-start justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3">
         <div className="min-w-0 space-y-1">
           <p
-            className="truncate text-sm font-medium text-zinc-900"
+            className="truncate text-sm font-medium text-slate-900"
             title={logo.originalFileName ?? "Untitled logo"}
           >
             {logo.originalFileName ?? "Untitled logo"}
           </p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-slate-500">
             {sourceKind === "svg"
               ? "SVG source"
               : sourceKind === "raster"
@@ -192,10 +192,10 @@ function PreviewArtwork({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-zinc-200 bg-white px-4 py-3 text-xs text-zinc-500">
+      <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
         <span>Zoom</span>
         <div
-          className="grid rounded-full bg-zinc-100 p-1"
+          className="grid border border-slate-200 bg-slate-100 p-0.5"
           style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
         >
           {(
@@ -211,10 +211,10 @@ function PreviewArtwork({
                 key={option.value}
                 type="button"
                 onClick={() => setZoom(option.value)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   isSelected
-                    ? "bg-white text-zinc-900 shadow-sm"
-                    : "text-zinc-600 hover:text-zinc-900"
+                    ? "bg-white text-slate-900"
+                    : "text-slate-500 hover:bg-slate-200/50"
                 }`}
               >
                 {option.label}
@@ -239,20 +239,20 @@ export default function SvgPreviewPanel({
   return (
     <div className="space-y-3">
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
           SVG Preview
-        </h3>
-        <p className="mt-1 text-xs text-zinc-500">
+        </label>
+        <p className="mt-1 text-xs text-slate-500">
           Inspect the traced SVG here before exporting.
         </p>
       </div>
 
       {!hasUploadedLogo ? (
-        <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-8 text-center">
-          <p className="text-sm font-medium text-zinc-700">
+        <div className="border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
+          <p className="text-sm font-medium text-slate-700">
             Upload a logo to preview the traced SVG.
           </p>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-slate-500">
             Raster uploads can be tuned here. SVG uploads preview directly.
           </p>
         </div>
@@ -266,13 +266,13 @@ export default function SvgPreviewPanel({
           />
 
           {tracePreview.error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {tracePreview.error}
             </div>
           ) : null}
 
           {sourceKind === "svg" ? (
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
+            <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               Uploaded SVGs are previewed directly and do not need tracing.
             </div>
           ) : null}

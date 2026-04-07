@@ -90,72 +90,62 @@ export default function ColorPanel() {
   };
 
   return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+    <div className="space-y-4">
+      <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
         Colors
-      </h3>
+      </label>
 
-      {sections.map((section) => {
-        const isOpen = expanded === section.key;
-        const currentColor = getColor(section);
+      <div className="space-y-2">
+        {sections.map((section) => {
+          const isOpen = expanded === section.key;
+          const currentColor = getColor(section);
 
-        return (
-          <div
-            key={section.key}
-            className="overflow-hidden rounded-xl border border-zinc-200"
-          >
-            <button
-              type="button"
-              onClick={() => setExpanded(isOpen ? null : section.key)}
-              className="flex w-full items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50"
+          return (
+            <div
+              key={section.key}
+              className="overflow-hidden border border-slate-200"
             >
-              <div
-                className="h-6 w-6 shrink-0 rounded-full border-2 border-zinc-300"
-                style={{ backgroundColor: currentColor }}
-              />
-              <span className="flex-1 text-left text-sm font-medium text-zinc-700">
-                {section.label}
-              </span>
-              <svg
-                className={`h-4 w-4 text-zinc-400 transition-transform ${
-                  isOpen ? "rotate-180" : ""
-                }`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+              <button
+                type="button"
+                onClick={() => setExpanded(isOpen ? null : section.key)}
+                className="flex h-11 w-full items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="h-5 w-5 shrink-0 border border-slate-200"
+                    style={{ backgroundColor: currentColor }}
+                  />
+                  <span className="text-sm font-medium text-slate-900">
+                    {section.label}
+                  </span>
+                </div>
+                <span className="material-symbols-outlined text-slate-400">
+                  {isOpen ? "expand_less" : "expand_more"}
+                </span>
+              </button>
 
-            {isOpen && (
-              <div className="px-4 pb-4 pt-1">
-                <div className="grid grid-cols-6 gap-2">
+              {isOpen && (
+                <div className="flex flex-wrap gap-2 p-4 pt-0">
                   {FILAMENT_PALETTE.map((filament) => (
                     <button
                       key={filament.hex}
                       type="button"
                       onClick={() => handleColorSelect(section, filament.hex)}
                       title={filament.name}
-                      className={`aspect-square w-full rounded-lg border-2 transition-all hover:scale-110 ${
+                      className={`h-5 w-5 border transition-all hover:scale-110 ${
                         currentColor === filament.hex
-                          ? "border-zinc-900 ring-2 ring-zinc-400"
-                          : "border-zinc-200"
+                          ? "border-slate-900"
+                          : "border-slate-200"
                       }`}
                       style={{ backgroundColor: filament.hex }}
                     />
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

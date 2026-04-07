@@ -239,48 +239,55 @@ export default function LogoUpload() {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+      <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
         Logo / Image
-      </h3>
+      </label>
 
       {!logo.dataUrl && !logo.vectorSvg ? (
         <div
           onDrop={onDrop}
           onDragOver={onDragOver}
           onClick={() => fileInputRef.current?.click()}
-          className="cursor-pointer rounded-xl border-2 border-dashed border-zinc-300 p-6 text-center transition-colors hover:border-zinc-400"
+          className="group flex cursor-pointer flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-200 p-6 transition-colors hover:bg-slate-50"
         >
           {isConverting ? (
-            <p className="text-sm text-zinc-500">Preparing image...</p>
+            <p className="text-sm text-slate-500">Preparing image...</p>
           ) : (
             <>
-              <p className="text-sm font-medium text-zinc-600">
-                Drop an image here or click to upload
-              </p>
-              <p className="mt-1 text-xs text-zinc-400">SVG, PNG, or JPG</p>
+              <span className="material-symbols-outlined text-slate-300 transition-colors group-hover:text-slate-500">
+                upload_file
+              </span>
+              <div className="text-center">
+                <span className="text-xs font-semibold text-slate-900">
+                  Drop image here
+                </span>
+                <p className="text-[11px] text-slate-500">
+                  or click to browse (SVG/PNG/JPG)
+                </p>
+              </div>
             </>
           )}
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center gap-3 rounded-lg bg-zinc-50 p-3">
-            {uploadPreviewUrl ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={uploadPreviewUrl}
-                alt="Logo preview"
-                className="h-12 w-12 rounded border border-zinc-200 bg-white object-contain"
-                draggable={false}
-              />
-            ) : (
-              <div className="flex h-12 w-12 items-center justify-center rounded border border-zinc-200 bg-white text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                SVG
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-zinc-700">
+          <div className="flex items-center justify-between border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center gap-3 overflow-hidden">
+              {uploadPreviewUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={uploadPreviewUrl}
+                  alt="Logo preview"
+                  className="h-12 w-12 border border-slate-200 bg-white object-contain"
+                  draggable={false}
+                />
+              ) : (
+                <span className="material-symbols-outlined text-lg text-slate-400">
+                  image
+                </span>
+              )}
+              <span className="truncate text-xs font-medium text-slate-600">
                 {logo.originalFileName ?? "Untitled logo"}
-              </p>
+              </span>
             </div>
             <button
               type="button"
@@ -288,26 +295,26 @@ export default function LogoUpload() {
                 setRasterQualityNotice(null);
                 clearLogo();
               }}
-              className="text-xs text-zinc-400 transition-colors hover:text-red-500"
+              className="text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-colors hover:text-red-600"
             >
               Remove
             </button>
           </div>
 
           {rasterQualityNotice ? (
-            <p
-              className={`rounded-lg px-3 py-2 text-xs ${
+            <div
+              className={`p-3 text-[11px] font-medium leading-relaxed ${
                 rasterQualityNotice.severity === "warning"
                   ? "border border-amber-200 bg-amber-50 text-amber-800"
-                  : "border border-zinc-200 bg-zinc-50 text-zinc-600"
+                  : "border border-slate-200 bg-slate-50 text-slate-600"
               }`}
             >
               {rasterQualityNotice.message}
-            </p>
+            </div>
           ) : null}
 
           {isConverting ? (
-            <p className="text-xs text-zinc-500">Preparing upload...</p>
+            <p className="text-xs text-slate-500">Preparing upload...</p>
           ) : null}
         </div>
       )}

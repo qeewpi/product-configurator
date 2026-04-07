@@ -19,9 +19,9 @@ export default function ShareModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4 space-y-4">
-        <h3 className="text-lg font-bold text-zinc-900">Design Saved!</h3>
-        <p className="text-sm text-zinc-600">
+      <div className="mx-4 w-full max-w-md space-y-4 border border-slate-200 bg-white p-6">
+        <h3 className="text-lg font-bold text-slate-900">Design Saved!</h3>
+        <p className="text-sm text-slate-600">
           Share this link to view or edit your design:
         </p>
 
@@ -29,11 +29,11 @@ export default function ShareModal({ onClose }: { onClose: () => void }) {
           <input
             readOnly
             value={url}
-            className="flex-1 px-3 py-2 text-sm bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-700 select-all"
+            className="flex-1 select-all border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
           />
           <button
             onClick={handleCopy}
-            className="px-4 py-2 text-sm font-medium bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors"
+            className="bg-black px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
           >
             {copied ? "Copied!" : "Copy"}
           </button>
@@ -41,7 +41,7 @@ export default function ShareModal({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={onClose}
-          className="w-full py-2 text-sm text-zinc-500 hover:text-zinc-700 transition-colors"
+          className="w-full py-2 text-sm text-slate-500 transition-colors hover:text-slate-700"
         >
           Close
         </button>

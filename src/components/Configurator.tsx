@@ -57,23 +57,12 @@ function ConfigureSidebarContent() {
       hidden={false}
       className="space-y-6"
     >
-      <section>
-        <div>
-          <h2 className="text-lg font-bold text-zinc-900">
-            Customize Your Deck Case
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Pick colors, place your logo, and tune the export.
-          </p>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
             Model
-          </h3>
-          <p className="mt-1 text-xs text-zinc-500">
+          </label>
+          <p className="text-xs text-slate-500">
             Choose which case body to customize and export.
           </p>
         </div>
@@ -82,7 +71,7 @@ function ConfigureSidebarContent() {
           {CASE_MODEL_OPTIONS.map((option) => (
             <label
               key={option.id}
-              className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 px-3 py-3 transition-colors hover:border-zinc-300"
+              className="flex cursor-pointer items-center gap-3 border border-slate-200 px-4 py-3 transition-colors hover:bg-slate-50"
             >
               <input
                 type="radio"
@@ -90,12 +79,10 @@ function ConfigureSidebarContent() {
                 value={option.id}
                 checked={model === option.id}
                 onChange={() => setModel(option.id)}
-                className="mt-1 h-4 w-4 border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                className="industrial-radio"
               />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-zinc-900">
-                  {option.label}
-                </span>
+              <span className="text-sm font-medium leading-none text-slate-900">
+                {option.label}
               </span>
             </label>
           ))}
@@ -112,12 +99,12 @@ function ConfigureSidebarContent() {
         <LogoAppearanceControls />
       </section>
 
-      <section className="space-y-3">
-        <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
             3MF Export Quality
-          </h3>
-          <p className="mt-1 text-xs text-zinc-500">
+          </label>
+          <p className="text-xs text-slate-500">
             Lower quality exports faster and keeps the file size smaller.
           </p>
         </div>
@@ -126,7 +113,7 @@ function ConfigureSidebarContent() {
           {EXPORT_QUALITY_OPTIONS.map((option) => (
             <label
               key={option.value}
-              className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 px-3 py-3 transition-colors hover:border-zinc-300"
+              className="flex cursor-pointer items-start gap-3 border border-slate-200 px-4 py-3 transition-colors hover:bg-slate-50"
             >
               <input
                 type="radio"
@@ -134,13 +121,13 @@ function ConfigureSidebarContent() {
                 value={option.value}
                 checked={exportQuality === option.value}
                 onChange={() => setExportQuality(option.value)}
-                className="mt-1 h-4 w-4 border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                className="industrial-radio mt-0.5"
               />
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-zinc-900">
+                <span className="block text-sm font-medium text-slate-900">
                   {option.label}
                 </span>
-                <span className="mt-1 block text-xs text-zinc-500">
+                <span className="mt-1 block text-xs text-slate-500">
                   {option.description}
                 </span>
               </span>
@@ -219,58 +206,73 @@ export default function Configurator() {
   };
 
   return (
-    <div className="flex h-full flex-col lg:flex-row">
-      <div className="min-h-[400px] flex-1 bg-zinc-100 lg:min-h-0">
+    <div className="flex h-full w-full">
+      {/* Canvas area */}
+      <div className="canvas-grid relative min-h-0 flex-1 bg-slate-50">
         <Scene />
       </div>
 
-      <div className="flex w-full flex-col border-l border-zinc-200 bg-white lg:w-[360px]">
-        <div className="sticky top-0 z-20 border-b border-zinc-200 bg-white p-4">
+      {/* Sidebar */}
+      <aside className="flex w-80 flex-col border-l border-slate-200 bg-white">
+        {/* Static header */}
+        <div className="flex flex-col gap-4 border-b border-slate-200 bg-white p-6">
+          <div className="flex flex-col gap-2">
+            <h1 className="font-headline text-xl font-extrabold leading-tight text-slate-900">
+              Customize your Deck Case
+            </h1>
+            <p className="text-sm font-medium text-slate-500">
+              Pick your colors and add your artwork
+            </p>
+          </div>
+
           <SidebarModeToggle value={sidebarMode} onChange={setSidebarMode} />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="p-5 pb-6">
-            <div className={sidebarMode === "configure" ? "block" : "hidden"}>
-              <ConfigureSidebarContent />
-            </div>
-            <div className={sidebarMode === "svgPreview" ? "block" : "hidden"}>
-              <SvgPreviewSidebarContent
-                tracePreview={tracePreview}
-                isActive={sidebarMode === "svgPreview"}
-              />
-            </div>
+        {/* Scrollable content */}
+        <div className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+          <div className={sidebarMode === "configure" ? "block" : "hidden"}>
+            <ConfigureSidebarContent />
           </div>
+          <div className={sidebarMode === "svgPreview" ? "block" : "hidden"}>
+            <SvgPreviewSidebarContent
+              tracePreview={tracePreview}
+              isActive={sidebarMode === "svgPreview"}
+            />
+          </div>
+
+          <div className="pb-6" />
         </div>
 
-        <div className="border-t border-zinc-200 bg-white/95 p-5 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-          <div className="space-y-3">
-            {exportError ? (
-              <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {exportError}
-              </p>
-            ) : null}
+        {/* Footer actions */}
+        <div className="flex flex-col gap-2 border-t border-slate-200 bg-white p-6">
+          {exportError ? (
+            <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {exportError}
+            </p>
+          ) : null}
 
-            <button
-              type="button"
-              onClick={handleExportStl}
-              disabled={saving || exporting}
-              className="w-full rounded-xl border border-zinc-300 px-4 py-3 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 disabled:opacity-50"
-            >
-              {exporting ? "Exporting STL..." : "Export STL"}
-            </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || exporting}
+            className="flex h-11 w-full items-center justify-center bg-slate-100 px-4 text-sm font-semibold text-slate-900 transition-all hover:bg-slate-200 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save My Design"}
+          </button>
 
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || exporting}
-              className="w-full rounded-xl bg-zinc-900 px-4 py-3 font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save My Design"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleExportStl}
+            disabled={saving || exporting}
+            className="flex h-11 w-full items-center justify-center gap-2 bg-black px-4 text-sm font-bold text-white transition-all hover:bg-slate-800 disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined !text-base">rocket_launch</span>
+            <span className="leading-none">
+              {exporting ? "Exporting..." : "Export 3MF"}
+            </span>
+          </button>
         </div>
-      </div>
+      </aside>
 
       {showShare ? <ShareModal onClose={() => setShowShare(false)} /> : null}
     </div>

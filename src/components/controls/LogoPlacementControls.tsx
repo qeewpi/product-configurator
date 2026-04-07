@@ -16,12 +16,12 @@ export default function LogoPlacementControls() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700">
+      <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
         Logo Position
-      </h3>
+      </label>
 
       <div className="space-y-2">
-        <label className="flex items-center justify-between text-xs text-zinc-500">
+        <label className="flex items-center justify-between text-xs text-slate-500">
           <span>Horizontal</span>
           <span>{logo.position.x.toFixed(0)}</span>
         </label>
@@ -39,12 +39,12 @@ export default function LogoPlacementControls() {
               },
             })
           }
-          className="w-full accent-zinc-700"
+          className="w-full accent-slate-700"
         />
       </div>
 
       <div className="space-y-2">
-        <label className="flex items-center justify-between text-xs text-zinc-500">
+        <label className="flex items-center justify-between text-xs text-slate-500">
           <span>Vertical</span>
           <span>{displayedVertical.toFixed(0)}</span>
         </label>
@@ -64,12 +64,12 @@ export default function LogoPlacementControls() {
               },
             })
           }
-          className="w-full accent-zinc-700"
+          className="w-full accent-slate-700"
         />
       </div>
 
       <div className="space-y-2">
-        <label className="flex items-center justify-between text-xs text-zinc-500">
+        <label className="flex items-center justify-between text-xs text-slate-500">
           <span>Size</span>
           <span>{(logo.scale * 100).toFixed(0)}%</span>
         </label>
@@ -82,10 +82,9 @@ export default function LogoPlacementControls() {
           onChange={(event) =>
             setLogo({ scale: Number.parseFloat(event.target.value) })
           }
-          className="w-full accent-zinc-700"
+          className="w-full accent-slate-700"
         />
       </div>
     </div>
   );
 }
-
