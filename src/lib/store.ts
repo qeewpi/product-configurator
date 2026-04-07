@@ -52,7 +52,7 @@ const DEFAULT_STATE: DesignConfig = {
   panelColors: ["#DC2626", "#2563EB", "#16A34A"],
   bottomColor: "#1A1A1A",
   clipsColor: "#1A1A1A",
-  exportQuality: "balanced",
+  exportQuality: "detailed",
   artworkStyle: "flat",
   logo: createDefaultLogoConfig(),
 };
