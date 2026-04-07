@@ -204,6 +204,24 @@ async function createEmbossGeometries(config: DesignConfig) {
   // This keeps export geometry aligned with the preview instead of retracing
   // sliced raster crops during export.
   if (config.logo.vectorSvg) {
+    if (config.model === "compact-3-lid" && lidPanelGeometries.length > 1) {
+      const slicedVectorGeometries =
+        await createSlicedSvgEmbossGeometries(
+          config.logo.vectorSvg,
+          artworkBounds,
+          lidPanelGeometries,
+          config.exportQuality,
+          config.artworkStyle,
+          logoSourceKind,
+          config.logo.color,
+          config.logo.traceSettings,
+        );
+
+      if (slicedVectorGeometries.length > 0) {
+        return slicedVectorGeometries;
+      }
+    }
+
     const vectorGeometries = await createDirectSvgEmbossGeometries(
       config.logo.vectorSvg,
       artworkBounds,
@@ -294,6 +312,101 @@ async function createEmbossGeometries(config: DesignConfig) {
   }
 
   return [];
+}
+
+async function createSlicedSvgEmbossGeometries(
+  svg: string,
+  artworkBounds: ReturnType<typeof getArtworkBounds>,
+  lidPanelGeometries: LidPanelGeometry[],
+  quality: ExportQuality,
+  style: ArtworkStyle,
+  sourceKind: LogoSourceKind,
+  logoColor: string | null,
+  traceSettings: DesignConfig["logo"]["traceSettings"],
+) {
+  const profile = getExportProfile(quality);
+  const sourceSvg = prepareSvgForRendering(svg, {
+    color: logoColor,
+    preserveWhite: false,
+    affectStroke: true,
+    sourceKind,
+    traceStyle: traceSettings.style,
+  });
+  const viewBox = getSvgViewBox(sourceSvg);
+  const aspectRatio = Math.max(viewBox.width / Math.max(viewBox.height, 1), 0.01);
+  const maxDimension = Math.max(profile.maxTraceDimension, 2048);
+  const rasterWidth =
+    aspectRatio >= 1
+      ? maxDimension
+      : Math.max(1, Math.round(maxDimension * aspectRatio));
+  const rasterHeight =
+    aspectRatio >= 1
+      ? Math.max(1, Math.round(maxDimension / aspectRatio))
+      : maxDimension;
+  const svgDocument = new DOMParser().parseFromString(
+    sourceSvg,
+    "image/svg+xml",
+  );
+  const root = svgDocument.documentElement;
+
+  if (!root.getAttribute("viewBox")) {
+    root.setAttribute(
+      "viewBox",
+      `${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`,
+    );
+  }
+  root.setAttribute("width", `${rasterWidth}`);
+  root.setAttribute("height", `${rasterHeight}`);
+
+  const serializedSvg = new XMLSerializer().serializeToString(svgDocument);
+  const encodedSvg = encodeURIComponent(serializedSvg)
+    .replace(/%0A/g, "")
+    .replace(/%20/g, " ");
+  const image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodedSvg}`);
+  const paletteCanvas = document.createElement("canvas");
+  paletteCanvas.width = image.naturalWidth;
+  paletteCanvas.height = image.naturalHeight;
+  const paletteContext = paletteCanvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+  let exportPaletteColors: string[] = [];
+
+  if (paletteContext) {
+    setHighQualitySmoothing(paletteContext);
+    paletteContext.clearRect(0, 0, paletteCanvas.width, paletteCanvas.height);
+    paletteContext.drawImage(image, 0, 0);
+    exportPaletteColors = resolveTracePaletteColors(
+      paletteContext.getImageData(
+        0,
+        0,
+        paletteCanvas.width,
+        paletteCanvas.height,
+      ),
+      traceSettings,
+    );
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[3MF export]", {
+      exportPath: "sliced-svg",
+      artworkBounds,
+      rasterHeight,
+      rasterWidth,
+      traceStyle: traceSettings.style,
+    });
+  }
+
+  return createRasterVectorEmbossGeometries(
+    image,
+    artworkBounds,
+    lidPanelGeometries,
+    quality,
+    style,
+    "none",
+    traceSettings,
+    logoColor,
+    exportPaletteColors,
+  );
 }
 
 function getSvgViewBox(svg: string) {
@@ -465,113 +578,6 @@ function collectMergedEmbossParts(parts: ExportPart[]) {
   }
 
   return mergedParts;
-}
-
-function getBoxOverlapState(
-  left: THREE.Box3,
-  right: THREE.Box3,
-  epsilon = 0.05,
-) {
-  const separated =
-    left.max.x < right.min.x - epsilon ||
-    right.max.x < left.min.x - epsilon ||
-    left.max.y < right.min.y - epsilon ||
-    right.max.y < left.min.y - epsilon ||
-    left.max.z < right.min.z - epsilon ||
-    right.max.z < left.min.z - epsilon;
-
-  if (separated) {
-    return "separate";
-  }
-
-  const overlapping =
-    left.max.x > right.min.x + epsilon &&
-    right.max.x > left.min.x + epsilon &&
-    left.max.y > right.min.y + epsilon &&
-    right.max.y > left.min.y + epsilon &&
-    left.max.z > right.min.z + epsilon &&
-    right.max.z > left.min.z + epsilon;
-
-  return overlapping ? "overlap" : "touching";
-}
-
-function logBasePartRelationships(parts: ExportPart[]) {
-  if (process.env.NODE_ENV === "production") {
-    return;
-  }
-
-  const entries = parts.map((part) => {
-    part.geometry.computeBoundingBox();
-    return {
-      bounds: part.geometry.boundingBox?.clone() ?? null,
-      color: `#${new THREE.Color(part.color).getHexString()}`,
-      name: part.name,
-      triangles: getTriangleCount(part.geometry),
-    };
-  });
-
-  const relationships: Array<{
-    left: string;
-    right: string;
-    state: "overlap" | "touching" | "separate";
-  }> = [];
-
-  for (let index = 0; index < entries.length; index += 1) {
-    for (let compareIndex = index + 1; compareIndex < entries.length; compareIndex += 1) {
-      const left = entries[index];
-      const right = entries[compareIndex];
-      if (!left.bounds || !right.bounds) {
-        continue;
-      }
-
-      relationships.push({
-        left: left.name,
-        right: right.name,
-        state: getBoxOverlapState(left.bounds, right.bounds),
-      });
-    }
-  }
-
-  console.info("[3MF export base parts]", {
-    parts: entries.map(({ bounds, ...part }) => ({
-      ...part,
-      bounds:
-        bounds
-          ? {
-              min: bounds.min.toArray(),
-              max: bounds.max.toArray(),
-            }
-          : null,
-    })),
-    relationships,
-  });
-}
-
-function mergeParts(parts: ExportPart[], name: string, color: THREE.ColorRepresentation) {
-  const mergedGeometry =
-    parts.length === 1 ? parts[0].geometry.clone() : mergeGeometries(parts.map((part) => part.geometry), false);
-
-  for (const part of parts) {
-    part.geometry.dispose();
-  }
-
-  if (!mergedGeometry) {
-    throw new Error(`Failed to merge export parts for ${name}`);
-  }
-
-  const normalized = normalizeGeometryForMerge(mergedGeometry);
-  mergedGeometry.dispose();
-
-  if (!validateExportGeometry(normalized)) {
-    normalized.dispose();
-    throw new Error(`Merged export geometry is invalid for ${name}`);
-  }
-
-  return {
-    color,
-    geometry: normalized,
-    name,
-  } satisfies ExportPart;
 }
 
 function getTriangleCount(geometry: THREE.BufferGeometry) {
@@ -1116,26 +1122,178 @@ function createBaseExportParts(
   return parts;
 }
 
-function resolveSlicerBaseParts(parts: ExportPart[]) {
-  const bottomTray = parts.find((part) => part.name === "bottom-tray");
-  const clips = parts.find((part) => part.name === "clips");
+function getCombinedBounds(parts: ExportPart[]) {
+  const bounds = new THREE.Box3();
+  let hasBounds = false;
 
-  if (!bottomTray || !clips) {
-    return parts;
+  for (const part of parts) {
+    part.geometry.computeBoundingBox();
+    if (!part.geometry.boundingBox) {
+      continue;
+    }
+
+    bounds.union(part.geometry.boundingBox);
+    hasBounds = true;
   }
 
-  const remainingParts = parts.filter(
-    (part) => part !== bottomTray && part !== clips,
+  if (!hasBounds) {
+    throw new Error("Failed to compute export bounds");
+  }
+
+  return bounds;
+}
+
+function cloneTranslatedPart(part: ExportPart, offset: THREE.Vector3) {
+  const geometry = part.geometry.clone();
+  geometry.translate(offset.x, offset.y, offset.z);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return {
+    ...part,
+    geometry,
+  } satisfies ExportPart;
+}
+
+function cloneTransformedPart(
+  part: ExportPart,
+  matrix: THREE.Matrix4,
+) {
+  const geometry = part.geometry.clone();
+  geometry.applyMatrix4(matrix);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return {
+    ...part,
+    geometry,
+  } satisfies ExportPart;
+}
+
+function rotatePartGroupAroundCenter(
+  parts: ExportPart[],
+  rotation: THREE.Euler,
+) {
+  if (parts.length === 0) {
+    return [];
+  }
+
+  const bounds = getCombinedBounds(parts);
+  const center = bounds.getCenter(new THREE.Vector3());
+  const transform = new THREE.Matrix4()
+    .makeTranslation(-center.x, -center.y, -center.z)
+    .multiply(new THREE.Matrix4().makeRotationFromEuler(rotation))
+    .multiply(new THREE.Matrix4().makeTranslation(center.x, center.y, center.z));
+
+  return parts.map((part) => cloneTransformedPart(part, transform));
+}
+
+function placePartGroup(
+  parts: ExportPart[],
+  targetMinX: number,
+  targetMinY: number,
+) {
+  if (parts.length === 0) {
+    return [];
+  }
+
+  const bounds = getCombinedBounds(parts);
+  const offset = new THREE.Vector3(
+    targetMinX - bounds.min.x,
+    targetMinY - bounds.min.y,
+    -bounds.min.z,
   );
 
-  if (new THREE.Color(bottomTray.color).getHex() !== new THREE.Color(clips.color).getHex()) {
-    return parts;
+  return parts.map((part) => cloneTranslatedPart(part, offset));
+}
+
+function createSeparatedPrintableLayout(
+  config: DesignConfig,
+  baseParts: ExportPart[],
+  artworkParts: ExportPart[],
+) {
+  if (config.model !== "compact-3-lid") {
+    return {
+      baseParts,
+      artworkParts,
+    };
   }
 
-  return [
-    ...remainingParts,
-    mergeParts([bottomTray, clips], "bottom-body", bottomTray.color),
-  ];
+  const lidParts = baseParts.filter((part) => part.name.startsWith("lid-"));
+  const bottomTray = baseParts.find((part) => part.name === "bottom-tray");
+  const clips = baseParts.find((part) => part.name === "clips");
+  const gapY = 12;
+
+  if (lidParts.length === 0 || !bottomTray) {
+    return {
+      baseParts,
+      artworkParts,
+    };
+  }
+
+  const lidAssemblyParts = [...lidParts, ...artworkParts];
+  const lidBounds = getCombinedBounds(lidAssemblyParts);
+  const bottomBounds = getCombinedBounds([bottomTray]);
+  const laidDownClips = clips
+    ? rotatePartGroupAroundCenter(
+        [clips],
+        new THREE.Euler(-Math.PI / 2, 0, 0),
+      )
+    : [];
+  const clipsBounds =
+    laidDownClips.length > 0 ? getCombinedBounds(laidDownClips) : null;
+  const lidSize = lidBounds.getSize(new THREE.Vector3());
+  const bottomSize = bottomBounds.getSize(new THREE.Vector3());
+  const clipsSize = clipsBounds?.getSize(new THREE.Vector3()) ?? null;
+  const lidRowMinX = -lidSize.x / 2;
+  const bottomRowMinX = -bottomSize.x / 2;
+  const clipsRowMinX = clipsSize ? -clipsSize.x / 2 : 0;
+  const clipsRowMinY = 0;
+  const bottomRowMinY = clipsRowMinY + (clipsSize?.y ?? 0) + gapY;
+  const lidRowMinY = bottomRowMinY + bottomSize.y + gapY;
+
+  const placedLidAssembly = placePartGroup(
+    lidAssemblyParts,
+    lidRowMinX,
+    lidRowMinY,
+  );
+  const placedBottomTray = placePartGroup(
+    [bottomTray],
+    bottomRowMinX,
+    bottomRowMinY,
+  );
+  const placedClips = clips
+    ? placePartGroup(laidDownClips, clipsRowMinX, clipsRowMinY)
+    : [];
+
+  if (process.env.NODE_ENV !== "production") {
+    const placedBounds = getCombinedBounds([
+      ...placedLidAssembly,
+      ...placedBottomTray,
+      ...placedClips,
+    ]);
+    console.info("[3MF export layout]", {
+      model: config.model,
+      layout: "separated-printable-parts",
+      layoutBounds: {
+        min: placedBounds.min.toArray(),
+        max: placedBounds.max.toArray(),
+      },
+      groups: {
+        lids: lidParts.map((part) => part.name),
+        bottom: bottomTray.name,
+        clips: clips?.name ?? null,
+        artworkCount: artworkParts.length,
+      },
+    });
+  }
+
+  return {
+    baseParts: [
+      ...placedLidAssembly.filter((part) => part.name.startsWith("lid-")),
+      ...placedBottomTray,
+      ...placedClips,
+    ],
+    artworkParts: placedLidAssembly.filter((part) => part.name === "artwork"),
+  };
 }
 
 function getExportFileName(model: CaseModelId) {
@@ -1146,20 +1304,27 @@ function getExportFileName(model: CaseModelId) {
 
 export async function exportDesignAs3MF(config: DesignConfig) {
   const preparedModel = await getPreparedModel(config.model);
-  const baseParts = resolveSlicerBaseParts(
-    createBaseExportParts(config, preparedModel),
-  );
+  const baseParts = createBaseExportParts(config, preparedModel);
   const { topLidBounds } = preparedModel;
   const artworkBounds = getArtworkBounds(config.logo, topLidBounds);
   const embossParts = collectMergedEmbossParts(
     await createEmbossGeometries(config),
   );
-  logBasePartRelationships(baseParts);
-  logExportStats(config, artworkBounds, baseParts, embossParts);
+  const placedParts = createSeparatedPrintableLayout(
+    config,
+    baseParts,
+    embossParts,
+  );
+  logExportStats(
+    config,
+    artworkBounds,
+    placedParts.baseParts,
+    placedParts.artworkParts,
+  );
   const exportGroup = new THREE.Group();
   exportGroup.name = "deck-case-design";
 
-  for (const part of baseParts) {
+  for (const part of placedParts.baseParts) {
     const mesh = new THREE.Mesh(
       part.geometry,
       new THREE.MeshStandardMaterial({ color: part.color }),
@@ -1168,7 +1333,7 @@ export async function exportDesignAs3MF(config: DesignConfig) {
     exportGroup.add(mesh);
   }
 
-  for (const [index, part] of embossParts.entries()) {
+  for (const [index, part] of placedParts.artworkParts.entries()) {
     const mesh = new THREE.Mesh(
       part.geometry,
       new THREE.MeshStandardMaterial({ color: part.color }),
