@@ -467,6 +467,113 @@ function collectMergedEmbossParts(parts: ExportPart[]) {
   return mergedParts;
 }
 
+function getBoxOverlapState(
+  left: THREE.Box3,
+  right: THREE.Box3,
+  epsilon = 0.05,
+) {
+  const separated =
+    left.max.x < right.min.x - epsilon ||
+    right.max.x < left.min.x - epsilon ||
+    left.max.y < right.min.y - epsilon ||
+    right.max.y < left.min.y - epsilon ||
+    left.max.z < right.min.z - epsilon ||
+    right.max.z < left.min.z - epsilon;
+
+  if (separated) {
+    return "separate";
+  }
+
+  const overlapping =
+    left.max.x > right.min.x + epsilon &&
+    right.max.x > left.min.x + epsilon &&
+    left.max.y > right.min.y + epsilon &&
+    right.max.y > left.min.y + epsilon &&
+    left.max.z > right.min.z + epsilon &&
+    right.max.z > left.min.z + epsilon;
+
+  return overlapping ? "overlap" : "touching";
+}
+
+function logBasePartRelationships(parts: ExportPart[]) {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const entries = parts.map((part) => {
+    part.geometry.computeBoundingBox();
+    return {
+      bounds: part.geometry.boundingBox?.clone() ?? null,
+      color: `#${new THREE.Color(part.color).getHexString()}`,
+      name: part.name,
+      triangles: getTriangleCount(part.geometry),
+    };
+  });
+
+  const relationships: Array<{
+    left: string;
+    right: string;
+    state: "overlap" | "touching" | "separate";
+  }> = [];
+
+  for (let index = 0; index < entries.length; index += 1) {
+    for (let compareIndex = index + 1; compareIndex < entries.length; compareIndex += 1) {
+      const left = entries[index];
+      const right = entries[compareIndex];
+      if (!left.bounds || !right.bounds) {
+        continue;
+      }
+
+      relationships.push({
+        left: left.name,
+        right: right.name,
+        state: getBoxOverlapState(left.bounds, right.bounds),
+      });
+    }
+  }
+
+  console.info("[3MF export base parts]", {
+    parts: entries.map(({ bounds, ...part }) => ({
+      ...part,
+      bounds:
+        bounds
+          ? {
+              min: bounds.min.toArray(),
+              max: bounds.max.toArray(),
+            }
+          : null,
+    })),
+    relationships,
+  });
+}
+
+function mergeParts(parts: ExportPart[], name: string, color: THREE.ColorRepresentation) {
+  const mergedGeometry =
+    parts.length === 1 ? parts[0].geometry.clone() : mergeGeometries(parts.map((part) => part.geometry), false);
+
+  for (const part of parts) {
+    part.geometry.dispose();
+  }
+
+  if (!mergedGeometry) {
+    throw new Error(`Failed to merge export parts for ${name}`);
+  }
+
+  const normalized = normalizeGeometryForMerge(mergedGeometry);
+  mergedGeometry.dispose();
+
+  if (!validateExportGeometry(normalized)) {
+    normalized.dispose();
+    throw new Error(`Merged export geometry is invalid for ${name}`);
+  }
+
+  return {
+    color,
+    geometry: normalized,
+    name,
+  } satisfies ExportPart;
+}
+
 function getTriangleCount(geometry: THREE.BufferGeometry) {
   const indexCount = geometry.index?.count ?? 0;
   if (indexCount > 0) {
@@ -1009,6 +1116,28 @@ function createBaseExportParts(
   return parts;
 }
 
+function resolveSlicerBaseParts(parts: ExportPart[]) {
+  const bottomTray = parts.find((part) => part.name === "bottom-tray");
+  const clips = parts.find((part) => part.name === "clips");
+
+  if (!bottomTray || !clips) {
+    return parts;
+  }
+
+  const remainingParts = parts.filter(
+    (part) => part !== bottomTray && part !== clips,
+  );
+
+  if (new THREE.Color(bottomTray.color).getHex() !== new THREE.Color(clips.color).getHex()) {
+    return parts;
+  }
+
+  return [
+    ...remainingParts,
+    mergeParts([bottomTray, clips], "bottom-body", bottomTray.color),
+  ];
+}
+
 function getExportFileName(model: CaseModelId) {
   return model === "compact-3-lid"
     ? "compact-3-lid-configured.3mf"
@@ -1017,12 +1146,15 @@ function getExportFileName(model: CaseModelId) {
 
 export async function exportDesignAs3MF(config: DesignConfig) {
   const preparedModel = await getPreparedModel(config.model);
-  const baseParts = createBaseExportParts(config, preparedModel);
+  const baseParts = resolveSlicerBaseParts(
+    createBaseExportParts(config, preparedModel),
+  );
   const { topLidBounds } = preparedModel;
   const artworkBounds = getArtworkBounds(config.logo, topLidBounds);
   const embossParts = collectMergedEmbossParts(
     await createEmbossGeometries(config),
   );
+  logBasePartRelationships(baseParts);
   logExportStats(config, artworkBounds, baseParts, embossParts);
   const exportGroup = new THREE.Group();
   exportGroup.name = "deck-case-design";
