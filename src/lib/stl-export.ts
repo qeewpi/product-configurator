@@ -200,12 +200,10 @@ async function createEmbossGeometries(config: DesignConfig) {
   const artworkBounds = getArtworkBounds(config.logo, topLidBounds);
   const logoSourceKind = resolveLogoSourceKind(config.logo);
 
-  // Prefer the pre-traced vectorSvg for all logos (SVG uploads and color-traced PNGs).
-  // This avoids expensive re-tracing during export.
-  if (config.logo.vectorSvg && logoSourceKind === "svg") {
-    // For raster-sourced logos (PNGs), don't override colors — let the
-    // natural multicolor from vtracer traces come through.
-    // Only apply logoColor for direct SVG uploads (monochrome vectors).
+  // Prefer the stored vectorSvg for all logos, including traced raster uploads.
+  // This keeps export geometry aligned with the preview instead of retracing
+  // sliced raster crops during export.
+  if (config.logo.vectorSvg) {
     const vectorGeometries = await createDirectSvgEmbossGeometries(
       config.logo.vectorSvg,
       artworkBounds,
