@@ -15,9 +15,10 @@ import type {
   ArtworkStyle,
   CaseModelId,
   DesignConfig,
+  ExportRequest,
   ExportQuality,
-  LogoBackgroundMode,
   LogoSourceKind,
+  ViewerPartKey,
 } from "@/types/design";
 import {
   getArtworkBounds,
@@ -42,12 +43,19 @@ import {
   prepareSvgForRendering,
   shouldSkipSvgPath,
 } from "@/lib/logo-svg-export";
+import {
+  getAvailableViewerParts,
+  getEffectiveVisibleParts,
+  resolveViewerPartLayout,
+  type PartBoundsMap,
+} from "@/lib/view-mode-layout";
 
 const EMBOSS_HEIGHT = 0.6;
 const EMBOSS_WELD_DEPTH = 0.12;
 // Keep flat artwork thick enough to survive common 0.2mm slicing without
 // losing thin counters or interior separations in letters and line art.
 const FLAT_ARTWORK_DEPTH = 0.4;
+const FLAT_ARTWORK_LIFT = 0.01;
 const LINE_ART_MIN_ALPHA = 16;
 
 type ExportProfile = {
@@ -79,13 +87,25 @@ type HoleCandidate = {
   center: THREE.Vector2;
 };
 
+function isLidPartName(name: string) {
+  return name === "lid" || name.startsWith("lid-");
+}
+
 function getArtworkDepth(style: ArtworkStyle) {
   return style === "emboss"
     ? EMBOSS_HEIGHT + EMBOSS_WELD_DEPTH
     : FLAT_ARTWORK_DEPTH;
 }
 
-function getArtworkBaseZ(panel: LidPanelGeometry, style: ArtworkStyle) {
+function getArtworkBaseZ(
+  panel: LidPanelGeometry,
+  style: ArtworkStyle,
+  model: CaseModelId,
+) {
+  if (style === "flat") {
+    return panel.exportSurfaceZ + FLAT_ARTWORK_LIFT;
+  }
+
   return style === "emboss"
     ? panel.exportSurfaceZ - EMBOSS_WELD_DEPTH
     : panel.exportSurfaceZ - FLAT_ARTWORK_DEPTH;
@@ -207,6 +227,7 @@ async function createEmbossGeometries(config: DesignConfig) {
     if (config.model === "compact-3-lid" && lidPanelGeometries.length > 1) {
       const slicedVectorGeometries =
         await createSlicedSvgEmbossGeometries(
+          config.model,
           config.logo.vectorSvg,
           artworkBounds,
           lidPanelGeometries,
@@ -223,6 +244,7 @@ async function createEmbossGeometries(config: DesignConfig) {
     }
 
     const vectorGeometries = await createDirectSvgEmbossGeometries(
+      config.model,
       config.logo.vectorSvg,
       artworkBounds,
       lidPanelGeometries,
@@ -295,6 +317,7 @@ async function createEmbossGeometries(config: DesignConfig) {
     }
 
     const fallbackGeometries = await createRasterVectorEmbossGeometries(
+      config.model,
       image,
       artworkBounds,
       lidPanelGeometries,
@@ -315,6 +338,7 @@ async function createEmbossGeometries(config: DesignConfig) {
 }
 
 async function createSlicedSvgEmbossGeometries(
+  model: CaseModelId,
   svg: string,
   artworkBounds: ReturnType<typeof getArtworkBounds>,
   lidPanelGeometries: LidPanelGeometry[],
@@ -397,6 +421,7 @@ async function createSlicedSvgEmbossGeometries(
   }
 
   return createRasterVectorEmbossGeometries(
+    model,
     image,
     artworkBounds,
     lidPanelGeometries,
@@ -709,6 +734,7 @@ function isPointInPolygon(point: THREE.Vector2, polygon: THREE.Vector2[]) {
 }
 
 async function createDirectSvgEmbossGeometries(
+  model: CaseModelId,
   svg: string,
   artworkBounds: ReturnType<typeof getArtworkBounds>,
   lidPanelGeometries: LidPanelGeometry[],
@@ -741,7 +767,7 @@ async function createDirectSvgEmbossGeometries(
   const scaleX = artworkBounds.width / paintedBounds.width;
   const scaleY = artworkBounds.height / paintedBounds.height;
   const baseZ = Math.max(
-    ...lidPanelGeometries.map((panel) => getArtworkBaseZ(panel, style)),
+    ...lidPanelGeometries.map((panel) => getArtworkBaseZ(panel, style, model)),
   );
   const parts: ExportPart[] = [];
 
@@ -814,6 +840,7 @@ async function createDirectSvgEmbossGeometries(
 }
 
 async function createRasterVectorEmbossGeometries(
+  model: CaseModelId,
   image: HTMLImageElement,
   artworkBounds: ReturnType<typeof getArtworkBounds>,
   lidPanelGeometries: LidPanelGeometry[],
@@ -887,7 +914,7 @@ async function createRasterVectorEmbossGeometries(
     const sliceViewBox = getSvgViewBox(tracedSlice.svg);
     const scaleX = slice.overlapWidth / sliceViewBox.width;
     const scaleY = slice.overlapHeight / sliceViewBox.height;
-    const baseZ = getArtworkBaseZ(slice.panel, style);
+    const baseZ = getArtworkBaseZ(slice.panel, style, model);
     const shapeCandidates: ShapeCandidate[] = [];
     const holeCandidates: HoleCandidate[] = [];
 
@@ -1143,17 +1170,6 @@ function getCombinedBounds(parts: ExportPart[]) {
   return bounds;
 }
 
-function cloneTranslatedPart(part: ExportPart, offset: THREE.Vector3) {
-  const geometry = part.geometry.clone();
-  geometry.translate(offset.x, offset.y, offset.z);
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return {
-    ...part,
-    geometry,
-  } satisfies ExportPart;
-}
-
 function cloneTransformedPart(
   part: ExportPart,
   matrix: THREE.Matrix4,
@@ -1168,132 +1184,113 @@ function cloneTransformedPart(
   } satisfies ExportPart;
 }
 
-function rotatePartGroupAroundCenter(
-  parts: ExportPart[],
-  rotation: THREE.Euler,
-) {
-  if (parts.length === 0) {
-    return [];
-  }
-
-  const bounds = getCombinedBounds(parts);
-  const center = bounds.getCenter(new THREE.Vector3());
-  const transform = new THREE.Matrix4()
-    .makeTranslation(-center.x, -center.y, -center.z)
-    .multiply(new THREE.Matrix4().makeRotationFromEuler(rotation))
-    .multiply(new THREE.Matrix4().makeTranslation(center.x, center.y, center.z));
-
-  return parts.map((part) => cloneTransformedPart(part, transform));
-}
-
-function placePartGroup(
-  parts: ExportPart[],
-  targetMinX: number,
-  targetMinY: number,
-) {
-  if (parts.length === 0) {
-    return [];
-  }
-
-  const bounds = getCombinedBounds(parts);
-  const offset = new THREE.Vector3(
-    targetMinX - bounds.min.x,
-    targetMinY - bounds.min.y,
-    -bounds.min.z,
-  );
-
-  return parts.map((part) => cloneTranslatedPart(part, offset));
-}
-
-function createSeparatedPrintableLayout(
-  config: DesignConfig,
+function getExportPartBounds(
   baseParts: ExportPart[],
   artworkParts: ExportPart[],
 ) {
-  if (config.model !== "compact-3-lid") {
-    return {
-      baseParts,
-      artworkParts,
-    };
-  }
+  const lidParts = baseParts.filter((part) => isLidPartName(part.name));
+  const bottomTray = baseParts.filter((part) => part.name === "bottom-tray");
+  const clips = baseParts.filter((part) => part.name === "clips");
 
-  const lidParts = baseParts.filter((part) => part.name.startsWith("lid-"));
-  const bottomTray = baseParts.find((part) => part.name === "bottom-tray");
-  const clips = baseParts.find((part) => part.name === "clips");
-  const gapY = 12;
+  return {
+    "top-lid": getCombinedBounds([...lidParts, ...artworkParts]),
+    "bottom-tray": getCombinedBounds(bottomTray),
+    clips:
+      clips.length > 0
+        ? getCombinedBounds(clips)
+        : new THREE.Box3(new THREE.Vector3(), new THREE.Vector3()),
+  } satisfies PartBoundsMap;
+}
 
-  if (lidParts.length === 0 || !bottomTray) {
-    return {
-      baseParts,
-      artworkParts,
-    };
-  }
-
-  const lidAssemblyParts = [...lidParts, ...artworkParts];
-  const lidBounds = getCombinedBounds(lidAssemblyParts);
-  const bottomBounds = getCombinedBounds([bottomTray]);
-  const laidDownClips = clips
-    ? rotatePartGroupAroundCenter(
-        [clips],
-        new THREE.Euler(-Math.PI / 2, 0, 0),
-      )
-    : [];
-  const clipsBounds =
-    laidDownClips.length > 0 ? getCombinedBounds(laidDownClips) : null;
-  const lidSize = lidBounds.getSize(new THREE.Vector3());
-  const bottomSize = bottomBounds.getSize(new THREE.Vector3());
-  const clipsSize = clipsBounds?.getSize(new THREE.Vector3()) ?? null;
-  const lidRowMinX = -lidSize.x / 2;
-  const bottomRowMinX = -bottomSize.x / 2;
-  const clipsRowMinX = clipsSize ? -clipsSize.x / 2 : 0;
-  const clipsRowMinY = 0;
-  const bottomRowMinY = clipsRowMinY + (clipsSize?.y ?? 0) + gapY;
-  const lidRowMinY = bottomRowMinY + bottomSize.y + gapY;
-
-  const placedLidAssembly = placePartGroup(
-    lidAssemblyParts,
-    lidRowMinX,
-    lidRowMinY,
+function createViewModeExportLayout(
+  request: ExportRequest,
+  baseParts: ExportPart[],
+  artworkParts: ExportPart[],
+) {
+  const availableParts = getAvailableViewerParts(
+    baseParts.some((part) => part.name === "clips"),
   );
-  const placedBottomTray = placePartGroup(
-    [bottomTray],
-    bottomRowMinX,
-    bottomRowMinY,
+  const effectiveVisibleParts = getEffectiveVisibleParts(
+    request.viewerMode,
+    request.visibleParts,
+    availableParts,
   );
-  const placedClips = clips
-    ? placePartGroup(laidDownClips, clipsRowMinX, clipsRowMinY)
-    : [];
+  const layout = resolveViewerPartLayout(
+    request.viewerMode,
+    availableParts,
+    effectiveVisibleParts,
+    getExportPartBounds(baseParts, artworkParts),
+  );
+  const partGroups: Record<
+    ViewerPartKey,
+    { baseParts: ExportPart[]; artworkParts: ExportPart[] }
+  > = {
+    "top-lid": {
+      baseParts: baseParts.filter((part) => isLidPartName(part.name)),
+      artworkParts,
+    },
+    "bottom-tray": {
+      baseParts: baseParts.filter((part) => part.name === "bottom-tray"),
+      artworkParts: [],
+    },
+    clips: {
+      baseParts: baseParts.filter((part) => part.name === "clips"),
+      artworkParts: [],
+    },
+  };
+
+  const placedParts = {
+    baseParts: [] as ExportPart[],
+    artworkParts: [] as ExportPart[],
+  };
+
+  (Object.keys(partGroups) as ViewerPartKey[]).forEach((partKey) => {
+    const partLayout = layout[partKey];
+    if (!partLayout.visible) {
+      return;
+    }
+
+    const transform = new THREE.Matrix4().compose(
+      new THREE.Vector3(...partLayout.position),
+      new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(...partLayout.rotation),
+      ),
+      new THREE.Vector3(1, 1, 1),
+    );
+
+    placedParts.baseParts.push(
+      ...partGroups[partKey].baseParts.map((part) =>
+        cloneTransformedPart(part, transform),
+      ),
+    );
+    placedParts.artworkParts.push(
+      ...partGroups[partKey].artworkParts.map((part) =>
+        cloneTransformedPart(part, transform),
+      ),
+    );
+  });
 
   if (process.env.NODE_ENV !== "production") {
     const placedBounds = getCombinedBounds([
-      ...placedLidAssembly,
-      ...placedBottomTray,
-      ...placedClips,
+      ...placedParts.baseParts,
+      ...placedParts.artworkParts,
     ]);
     console.info("[3MF export layout]", {
-      model: config.model,
-      layout: "separated-printable-parts",
+      model: request.config.model,
+      viewerMode: request.viewerMode,
+      visibleParts: effectiveVisibleParts,
       layoutBounds: {
         min: placedBounds.min.toArray(),
         max: placedBounds.max.toArray(),
       },
       groups: {
-        lids: lidParts.map((part) => part.name),
-        bottom: bottomTray.name,
-        clips: clips?.name ?? null,
-        artworkCount: artworkParts.length,
+        baseParts: placedParts.baseParts.map((part) => part.name),
+        artworkCount: placedParts.artworkParts.length,
       },
     });
   }
 
-  return {
-    baseParts: [
-      ...placedLidAssembly.filter((part) => part.name.startsWith("lid-")),
-      ...placedBottomTray,
-      ...placedClips,
-    ],
-    artworkParts: placedLidAssembly.filter((part) => part.name === "artwork"),
-  };
+  return placedParts;
 }
 
 function getExportFileName(model: CaseModelId) {
@@ -1302,7 +1299,8 @@ function getExportFileName(model: CaseModelId) {
     : "rugged-configured.3mf";
 }
 
-export async function exportDesignAs3MF(config: DesignConfig) {
+export async function exportDesignAs3MF(request: ExportRequest) {
+  const { config } = request;
   const preparedModel = await getPreparedModel(config.model);
   const baseParts = createBaseExportParts(config, preparedModel);
   const { topLidBounds } = preparedModel;
@@ -1310,8 +1308,8 @@ export async function exportDesignAs3MF(config: DesignConfig) {
   const embossParts = collectMergedEmbossParts(
     await createEmbossGeometries(config),
   );
-  const placedParts = createSeparatedPrintableLayout(
-    config,
+  const placedParts = createViewModeExportLayout(
+    request,
     baseParts,
     embossParts,
   );
@@ -1364,6 +1362,6 @@ export async function exportDesignAs3MF(config: DesignConfig) {
   await save3mf(data, getExportFileName(config.model));
 }
 
-export async function exportDesignAsStl(config: DesignConfig) {
-  return exportDesignAs3MF(config);
+export async function exportDesignAsStl(request: ExportRequest) {
+  return exportDesignAs3MF(request);
 }

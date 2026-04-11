@@ -181,6 +181,8 @@ export default function Configurator() {
     parseSidebarMode(searchParams.get("sidebarMode")) ?? "configure"
   );
   const serialize = useDesignStore((state) => state.serialize);
+  const viewerMode = useDesignStore((state) => state.viewerMode);
+  const visibleParts = useDesignStore((state) => state.visibleParts);
   const tracePreview = useLogoTracePreview();
 
   useEffect(() => {
@@ -215,7 +217,11 @@ export default function Configurator() {
     setExportError(null);
 
     try {
-      await exportDesignAsStl(serialize());
+      await exportDesignAsStl({
+        config: serialize(),
+        viewerMode,
+        visibleParts,
+      });
     } catch (error) {
       setExportError(
         error instanceof Error ? error.message : "Failed to export STL"
@@ -292,6 +298,9 @@ export default function Configurator() {
               {exporting ? "Exporting..." : "Export 3MF"}
             </span>
           </button>
+          <p className="text-xs text-outline">
+            Export uses the active view mode shown in the preview.
+          </p>
         </div>
       </aside>
 

@@ -47,6 +47,12 @@ export interface ViewerVisibleParts {
   clips: boolean;
 }
 
+export interface ExportRequest {
+  config: DesignConfig;
+  viewerMode: ViewerMode;
+  visibleParts: ViewerVisibleParts;
+}
+
 export interface DesignConfig {
   id?: string;
   model: CaseModelId;
