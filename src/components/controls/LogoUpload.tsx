@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { computeOtsuThreshold, extractInkColor } from "@/lib/logo-background";
 import { getDefaultTraceSettings } from "@/lib/trace-settings";
 import { getClosestFilamentColor } from "@/lib/filaments";
+import MaterialIcon from "@/components/MaterialIcon";
 import {
   createLogoPreviewBlobUrl,
   resolveLogoSourceKind,
@@ -239,7 +240,7 @@ export default function LogoUpload() {
 
   return (
     <div className="space-y-4">
-      <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
+      <label className="text-[14px] font-bold uppercase tracking-[0.1em] text-on-surface">
         Logo / Image
       </label>
 
@@ -248,20 +249,21 @@ export default function LogoUpload() {
           onDrop={onDrop}
           onDragOver={onDragOver}
           onClick={() => fileInputRef.current?.click()}
-          className="group flex cursor-pointer flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-200 p-6 transition-colors hover:bg-slate-50"
+          className="group flex cursor-pointer flex-col items-center justify-center gap-2 border-2 border-dashed border-surface-container-highest p-6 transition-colors hover:bg-surface-container-low"
         >
           {isConverting ? (
-            <p className="text-sm text-slate-500">Preparing image...</p>
+            <p className="text-sm text-outline">Preparing image...</p>
           ) : (
             <>
-              <span className="material-symbols-outlined text-slate-300 transition-colors group-hover:text-slate-500">
-                upload_file
-              </span>
+              <MaterialIcon
+                name="upload_file"
+                className="h-6 w-6 text-outline-variant transition-colors group-hover:text-outline"
+              />
               <div className="text-center">
-                <span className="text-xs font-semibold text-slate-900">
+                <span className="text-[13px] font-semibold text-on-surface">
                   Drop image here
                 </span>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[14px] text-outline">
                   or click to browse (SVG/PNG/JPG)
                 </p>
               </div>
@@ -270,22 +272,20 @@ export default function LogoUpload() {
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between border border-surface-container-highest bg-surface-container-low p-3">
             <div className="flex items-center gap-3 overflow-hidden">
               {uploadPreviewUrl ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={uploadPreviewUrl}
                   alt="Logo preview"
-                  className="h-12 w-12 border border-slate-200 bg-white object-contain"
+                  className="h-12 w-12 border border-surface-container-highest bg-white object-contain"
                   draggable={false}
                 />
               ) : (
-                <span className="material-symbols-outlined text-lg text-slate-400">
-                  image
-                </span>
+                <MaterialIcon name="image" className="h-[18px] w-[18px] text-outline-variant" />
               )}
-              <span className="truncate text-xs font-medium text-slate-600">
+              <span className="truncate text-[13px] font-medium text-on-surface-variant">
                 {logo.originalFileName ?? "Untitled logo"}
               </span>
             </div>
@@ -295,7 +295,7 @@ export default function LogoUpload() {
                 setRasterQualityNotice(null);
                 clearLogo();
               }}
-              className="text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-colors hover:text-red-600"
+              className="text-[13px] font-bold uppercase tracking-wider text-outline-variant transition-colors hover:text-red-600"
             >
               Remove
             </button>
@@ -303,10 +303,10 @@ export default function LogoUpload() {
 
           {rasterQualityNotice ? (
             <div
-              className={`p-3 text-[11px] font-medium leading-relaxed ${
+              className={`p-3 text-[14px] font-medium leading-relaxed ${
                 rasterQualityNotice.severity === "warning"
                   ? "border border-amber-200 bg-amber-50 text-amber-800"
-                  : "border border-slate-200 bg-slate-50 text-slate-600"
+                  : "border border-surface-container-highest bg-surface-container-low text-on-surface-variant"
               }`}
             >
               {rasterQualityNotice.message}
@@ -314,7 +314,7 @@ export default function LogoUpload() {
           ) : null}
 
           {isConverting ? (
-            <p className="text-xs text-slate-500">Preparing upload...</p>
+            <p className="text-[13px] text-outline">Preparing upload...</p>
           ) : null}
         </div>
       )}

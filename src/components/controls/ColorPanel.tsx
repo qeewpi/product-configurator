@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import MaterialIcon from "@/components/MaterialIcon";
 import { CASE_MODELS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 import { FILAMENT_PALETTE } from "@/lib/filaments";
@@ -91,7 +92,7 @@ export default function ColorPanel() {
 
   return (
     <div className="space-y-4">
-      <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
+      <label className="text-[14px] font-bold uppercase tracking-[0.1em] text-on-surface">
         Colors
       </label>
 
@@ -103,39 +104,40 @@ export default function ColorPanel() {
           return (
             <div
               key={section.key}
-              className="overflow-hidden border border-slate-200"
+              className="overflow-hidden border border-surface-container-highest"
             >
               <button
                 type="button"
                 onClick={() => setExpanded(isOpen ? null : section.key)}
-                className="flex h-11 w-full items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50"
+                className="flex h-11 w-full items-center justify-between px-4 py-3 transition-colors hover:bg-surface-container-low"
               >
                 <div className="flex items-center gap-3">
                   <div
-                    className="h-5 w-5 shrink-0 border border-slate-200"
+                    className="h-5 w-5 shrink-0 border border-surface-container-highest"
                     style={{ backgroundColor: currentColor }}
                   />
-                  <span className="text-sm font-medium text-slate-900">
+                  <span className="text-sm font-medium text-on-surface">
                     {section.label}
                   </span>
                 </div>
-                <span className="material-symbols-outlined text-slate-400">
-                  {isOpen ? "expand_less" : "expand_more"}
-                </span>
+                <MaterialIcon
+                  name={isOpen ? "expand_less" : "expand_more"}
+                  className="h-6 w-6 text-outline-variant"
+                />
               </button>
 
               {isOpen && (
-                <div className="flex flex-wrap gap-2 p-4 pt-0">
+                <div className="grid w-full grid-cols-6 gap-3 px-4 pb-4 pt-0">
                   {FILAMENT_PALETTE.map((filament) => (
                     <button
                       key={filament.hex}
                       type="button"
                       onClick={() => handleColorSelect(section, filament.hex)}
                       title={filament.name}
-                      className={`h-5 w-5 border transition-all hover:scale-110 ${
+                      className={`aspect-square w-full border transition-all hover:scale-110 ${
                         currentColor === filament.hex
-                          ? "border-slate-900"
-                          : "border-slate-200"
+                          ? "border-on-surface"
+                          : "border-surface-container-highest"
                       }`}
                       style={{ backgroundColor: filament.hex }}
                     />

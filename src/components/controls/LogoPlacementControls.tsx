@@ -13,77 +13,97 @@ export default function LogoPlacementControls() {
   }
 
   const displayedVertical = logo.position.y - LOGO_VERTICAL_CENTER_OFFSET;
+  const sliderClassName =
+    "block h-1 w-full cursor-pointer appearance-none accent-black bg-surface-container-highest";
 
   return (
-    <div className="space-y-3">
-      <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
+    <div className="space-y-4">
+      <label className="text-[14px] font-bold uppercase tracking-[0.1em] text-on-surface">
         Logo Position
       </label>
 
-      <div className="space-y-2">
-        <label className="flex items-center justify-between text-xs text-slate-500">
-          <span>Horizontal</span>
-          <span>{logo.position.x.toFixed(0)}</span>
+      <div className="space-y-2 pb-2 last:pb-0">
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-[13px] font-extrabold uppercase text-neutral-600">
+            Horizontal
+          </span>
+          <span className="tabular-nums text-[13px] font-bold text-black">
+            {logo.position.x.toFixed(0)}
+          </span>
         </label>
-        <input
-          type="range"
-          min={-60}
-          max={60}
-          step={1}
-          value={logo.position.x}
-          onChange={(event) =>
-            setLogo({
-              position: {
-                ...logo.position,
-                x: Number.parseFloat(event.target.value),
-              },
-            })
-          }
-          className="w-full accent-slate-700"
-        />
+        <div className="py-2">
+          <input
+            type="range"
+            min={-60}
+            max={60}
+            step={1}
+            value={logo.position.x}
+            onChange={(event) =>
+              setLogo({
+                position: {
+                  ...logo.position,
+                  x: Number.parseFloat(event.target.value),
+                },
+              })
+            }
+            className={sliderClassName}
+          />
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="flex items-center justify-between text-xs text-slate-500">
-          <span>Vertical</span>
-          <span>{displayedVertical.toFixed(0)}</span>
+      <div className="space-y-2 pb-2 last:pb-0">
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-[13px] font-extrabold uppercase text-neutral-600">
+            Vertical
+          </span>
+          <span className="tabular-nums text-[13px] font-bold text-black">
+            {displayedVertical.toFixed(0)}
+          </span>
         </label>
-        <input
-          type="range"
-          min={-60}
-          max={60}
-          step={1}
-          value={displayedVertical}
-          onChange={(event) =>
-            setLogo({
-              position: {
-                ...logo.position,
-                y:
-                  LOGO_VERTICAL_CENTER_OFFSET +
-                  Number.parseFloat(event.target.value),
-              },
-            })
-          }
-          className="w-full accent-slate-700"
-        />
+        <div className="py-2">
+          <input
+            type="range"
+            min={-60}
+            max={60}
+            step={1}
+            value={displayedVertical}
+            onChange={(event) =>
+              setLogo({
+                position: {
+                  ...logo.position,
+                  y:
+                    LOGO_VERTICAL_CENTER_OFFSET +
+                    Number.parseFloat(event.target.value),
+                },
+              })
+            }
+            className={sliderClassName}
+          />
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="flex items-center justify-between text-xs text-slate-500">
-          <span>Size</span>
-          <span>{(logo.scale * 100).toFixed(0)}%</span>
+      <div className="space-y-2 pb-0">
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-[13px] font-extrabold uppercase text-neutral-600">
+            Size
+          </span>
+          <span className="tabular-nums text-[13px] font-bold text-black">
+            {(logo.scale * 100).toFixed(0)}%
+          </span>
         </label>
-        <input
-          type="range"
-          min={0.2}
-          max={3}
-          step={0.05}
-          value={logo.scale}
-          onChange={(event) =>
-            setLogo({ scale: Number.parseFloat(event.target.value) })
-          }
-          className="w-full accent-slate-700"
-        />
+        <div className="py-2">
+          <input
+            type="range"
+            min={0.2}
+            max={3}
+            step={0.05}
+            value={logo.scale}
+            onChange={(event) =>
+              setLogo({ scale: Number.parseFloat(event.target.value) })
+            }
+            className={sliderClassName}
+          />
+        </div>
       </div>
     </div>
   );

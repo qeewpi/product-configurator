@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import MaterialIcon from "@/components/MaterialIcon";
 import { FILAMENT_PALETTE } from "@/lib/filaments";
 import { useDesignStore } from "@/lib/store";
 import {
@@ -147,6 +149,74 @@ function updateTraceSettings(
   };
 }
 
+function SelectDropdown<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+  onChange: (next: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between border border-surface-container-highest bg-white px-3 py-2 text-sm font-medium text-on-surface transition-none"
+      >
+        <span>{selected?.label}</span>
+        <MaterialIcon
+          name={open ? "expand_less" : "expand_more"}
+          className="h-[18px] w-[18px] text-outline"
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 right-0 top-full z-10 border border-surface-container-highest border-t-0 bg-white"
+        >
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center px-3 py-2 text-sm font-medium transition-none ${
+                  isSelected
+                    ? "bg-black text-white"
+                    : "text-on-surface hover:bg-surface-container-high"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SegmentedButtonGroup<T extends string>({
   label,
   items,
@@ -160,13 +230,11 @@ function SegmentedButtonGroup<T extends string>({
 }) {
   return (
     <div className="space-y-2">
-      <div>
-        <h4 className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
-          {label}
-        </h4>
-      </div>
+      <h4 className="text-[13px] font-extrabold uppercase text-neutral-600">
+        {label}
+      </h4>
       <div
-        className="grid border border-slate-200 bg-slate-100 p-0.5"
+        className="grid gap-0.5 bg-surface-container-low p-0.5"
         role="radiogroup"
         aria-label={label}
         style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
@@ -181,10 +249,10 @@ function SegmentedButtonGroup<T extends string>({
               aria-checked={isSelected}
               onClick={() => onChange(item.value)}
               tabIndex={isSelected ? 0 : -1}
-              className={`px-3 py-2 text-sm font-medium transition-colors ${
+              className={`px-3 py-2 text-[13px] font-bold uppercase transition-none ${
                 isSelected
-                  ? "bg-white text-slate-900"
-                  : "text-slate-500 hover:bg-slate-200/50"
+                  ? "bg-black text-white"
+                  : "text-neutral-500 hover:bg-white"
               }`}
             >
               {item.label}
@@ -206,33 +274,45 @@ function SliderRow({
   onChange: (next: number) => void;
 }) {
   return (
-    <div className="space-y-2 border border-slate-200 bg-white px-4 py-3">
-      <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
-        <span>{slider.label}</span>
-        <span className="tabular-nums text-slate-500">{value}</span>
+    <div className="space-y-2 pb-2 last:pb-0">
+      <label className="flex items-center justify-between gap-3">
+        <span className="text-[13px] font-extrabold uppercase text-neutral-600">
+          {slider.label}
+        </span>
+        <span className="tabular-nums text-[13px] font-bold text-black">{value}</span>
       </label>
-      <input
-        type="range"
-        min={slider.min}
-        max={slider.max}
-        step={slider.step}
-        value={value}
-        onChange={(event) => onChange(Number.parseFloat(event.target.value))}
-        className="w-full accent-slate-700"
-      />
-      <p className="text-xs text-slate-500">{slider.description}</p>
+      <div className="py-2">
+        <input
+          type="range"
+          min={slider.min}
+          max={slider.max}
+          step={slider.step}
+          value={value}
+          onChange={(event) => onChange(Number.parseFloat(event.target.value))}
+          className="block h-1 w-full cursor-pointer appearance-none accent-black bg-surface-container-highest"
+        />
+      </div>
     </div>
   );
 }
 
 export default function TraceControls() {
+  const searchParams = useSearchParams();
   const logo = useDesignStore((state) => state.logo);
   const panelColors = useDesignStore((state) => state.panelColors);
   const bottomColor = useDesignStore((state) => state.bottomColor);
   const clipsColor = useDesignStore((state) => state.clipsColor);
   const setLogo = useDesignStore((state) => state.setLogo);
   const sourceKind = resolveLogoSourceKind(logo);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(
+    searchParams.get("traceAdvanced") === "open"
+  );
+
+  useEffect(() => {
+    if (searchParams.get("traceAdvanced") === "open") {
+      setAdvancedOpen(true);
+    }
+  }, [searchParams]);
 
   const hasLogo = Boolean(logo.dataUrl || logo.vectorSvg);
   const shouldShowRasterControls = sourceKind === "raster";
@@ -370,36 +450,25 @@ export default function TraceControls() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {shouldShowRasterControls ? (
         <>
           <div className="space-y-2">
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
+              <label className="text-[14px] font-bold uppercase tracking-[0.1em] text-on-surface">
                 Background Removal
               </label>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-[14px] text-outline">
                 Choose the border-connected backdrop family to remove. Auto
                 only removes it when the border evidence is strong enough.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {BACKGROUND_MODE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setLogo({ backgroundMode: option.value })}
-                  className={`border px-3 py-2 text-sm font-medium transition-colors ${
-                    logo.backgroundMode === option.value
-                      ? "border-black bg-black text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <SelectDropdown
+              options={BACKGROUND_MODE_OPTIONS}
+              value={logo.backgroundMode}
+              onChange={(value) => setLogo({ backgroundMode: value })}
+            />
           </div>
 
           <SegmentedButtonGroup
@@ -420,17 +489,17 @@ export default function TraceControls() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
+              <h4 className="text-[13px] font-extrabold uppercase text-neutral-600">
                 Trace Preset
               </h4>
               {logo.traceSettings.preset === "custom" ? (
-                <span className="bg-black px-2.5 py-1 text-[11px] font-medium text-white">
+                <span className="bg-black px-2 py-1 text-[12px] font-bold uppercase text-white">
                   Custom
                 </span>
               ) : null}
             </div>
             <div
-              className="grid border border-slate-200 bg-slate-100 p-0.5"
+              className="grid gap-0.5 bg-surface-container-low p-0.5"
               role="radiogroup"
               aria-label="Trace Preset"
               style={{
@@ -447,10 +516,10 @@ export default function TraceControls() {
                     aria-checked={isSelected}
                     onClick={() => handlePresetChange(item.value)}
                     tabIndex={isSelected ? 0 : -1}
-                    className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`px-3 py-2 text-[13px] font-bold uppercase transition-none ${
                       isSelected
-                        ? "bg-white text-slate-900"
-                        : "text-slate-500 hover:bg-slate-200/50"
+                        ? "bg-black text-white"
+                        : "text-neutral-500 hover:bg-white"
                     }`}
                   >
                     {item.label}
@@ -465,18 +534,21 @@ export default function TraceControls() {
             onToggle={(event) =>
               setAdvancedOpen((event.currentTarget as HTMLDetailsElement).open)
             }
-            className="overflow-hidden border border-slate-200 bg-slate-50"
+            className="overflow-hidden border-t border-surface-container-low pt-4"
           >
-            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-700">
+            <summary className="cursor-pointer list-none text-sm font-medium text-on-surface-variant">
               <div className="flex items-center justify-between gap-3">
-                <span>Advanced</span>
-                <span className="material-symbols-outlined text-slate-400">
-                  {advancedOpen ? "expand_less" : "expand_more"}
+                <span className="text-[13px] font-extrabold uppercase text-neutral-600">
+                  Advanced
                 </span>
+                <MaterialIcon
+                  name={advancedOpen ? "expand_less" : "expand_more"}
+                  className="h-6 w-6 text-outline-variant"
+                />
               </div>
             </summary>
 
-            <div className="space-y-3 px-4 pb-4">
+            <div className="space-y-4 pt-4">
               <SegmentedButtonGroup
                 label="Curve Fitting"
                 items={CURVE_MODE_OPTIONS}
@@ -485,12 +557,12 @@ export default function TraceControls() {
               />
 
               {logo.traceSettings.style === "color" ? (
-                <div className="space-y-2 border border-slate-200 bg-white px-4 py-3">
+                <div className="space-y-2 border border-surface-container-highest bg-white px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <label className="text-sm font-medium text-slate-700">
+                    <label className="text-[13px] font-extrabold uppercase text-neutral-600">
                       Palette Colors
                     </label>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-[13px] text-outline">
                       Optional exact swatches
                     </span>
                   </div>
@@ -505,11 +577,11 @@ export default function TraceControls() {
                           key={filament.hex}
                           type="button"
                           onClick={() => handlePaletteToggle(filament.hex)}
-                          title={filament.name}
+                      title={filament.name}
                           className={`h-5 w-5 border transition-all hover:scale-105 ${
                             isSelected
-                              ? "border-slate-900"
-                              : "border-slate-200"
+                              ? "border-on-surface"
+                              : "border-surface-container-highest"
                           }`}
                           style={{ backgroundColor: filament.hex }}
                         />
@@ -520,14 +592,14 @@ export default function TraceControls() {
                     <button
                       type="button"
                       onClick={handleUseCurrentDesignColors}
-                      className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+                      className="border border-surface-container-highest bg-white px-3 py-1.5 text-[13px] font-bold uppercase text-neutral-600 transition-colors hover:border-outline-variant hover:text-on-surface"
                     >
                       Use Current Design Colors
                     </button>
                     <button
                       type="button"
                       onClick={handleClearPaletteColors}
-                      className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+                      className="border border-surface-container-highest bg-white px-3 py-1.5 text-[13px] font-bold uppercase text-neutral-600 transition-colors hover:border-outline-variant hover:text-on-surface"
                     >
                       Auto Palette
                     </button>
@@ -543,10 +615,10 @@ export default function TraceControls() {
                             key={color}
                             type="button"
                             onClick={() => handlePaletteToggle(color)}
-                            className="inline-flex items-center gap-2 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700"
+                            className="inline-flex items-center gap-2 border border-surface-container-highest bg-surface-container-low px-2.5 py-1 text-[13px] font-bold uppercase text-neutral-600"
                           >
                             <span
-                              className="h-3 w-3 border border-slate-300"
+                              className="h-3 w-3 border border-outline-variant"
                               style={{ backgroundColor: color }}
                             />
                             {filament?.name ?? color}
@@ -555,7 +627,7 @@ export default function TraceControls() {
                       })}
                     </div>
                   ) : null}
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[14px] text-outline">
                     Pick exact swatches to force the trace into a fixed palette,
                     or leave this empty to let Max Colors auto-pick the palette.
                   </p>
@@ -587,7 +659,7 @@ export default function TraceControls() {
           </details>
         </>
       ) : (
-        <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="border border-surface-container-highest bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
           Uploaded SVGs are previewed directly. Tracing controls are only needed
           for raster uploads.
         </div>

@@ -228,9 +228,9 @@ export default function Scene() {
           </div>
           <div className="mt-3 space-y-2 text-xs text-slate-600">
             <p><span className="font-medium text-slate-900">Rotate:</span> drag with the mouse.</p>
-            <p><span className="font-medium text-slate-900">Pan:</span> click the hand icon, or hold <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px]">Space</kbd> to pan with the mouse.</p>
-            <p><span className="font-medium text-slate-900">Move:</span> hold <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px]">W</kbd> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px]">A</kbd> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px]">S</kbd> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px]">D</kbd> to smoothly move the camera anytime.</p>
-            <p><span className="font-medium text-slate-900">Shortcuts:</span> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px]">H</kbd> pins the hand tool and <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px]">R</kbd> resets the camera.</p>
+            <p><span className="font-medium text-slate-900">Pan:</span> click the hand icon, or hold <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[14px]">Space</kbd> to pan with the mouse.</p>
+            <p><span className="font-medium text-slate-900">Move:</span> hold <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[14px]">W</kbd> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[14px]">A</kbd> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[14px]">S</kbd> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[14px]">D</kbd> to smoothly move the camera anytime.</p>
+            <p><span className="font-medium text-slate-900">Shortcuts:</span> <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[14px]">H</kbd> pins the hand tool and <kbd className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[14px]">R</kbd> resets the camera.</p>
           </div>
           <button
             type="button"

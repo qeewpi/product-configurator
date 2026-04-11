@@ -1,12 +1,17 @@
 "use client";
 
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import MaterialIcon, { type MaterialIconName } from "@/components/MaterialIcon";
 
 export type SidebarMode = "configure" | "svgPreview";
 
-const MODES: Array<{ value: SidebarMode; label: string }> = [
-  { value: "configure", label: "Configure" },
-  { value: "svgPreview", label: "Export" },
+const MODES: Array<{
+  value: SidebarMode;
+  label: string;
+  icon: MaterialIconName;
+}> = [
+  { value: "configure", label: "Configure", icon: "tune" },
+  { value: "svgPreview", label: "Export", icon: "file_download" },
 ];
 
 export default function SidebarModeToggle({
@@ -45,7 +50,7 @@ export default function SidebarModeToggle({
 
   return (
     <div
-      className="flex h-11 overflow-hidden border border-slate-200 bg-slate-100 p-0.5"
+      className="flex h-11"
       role="tablist"
       aria-label="Sidebar mode"
       onKeyDown={handleKeyDown}
@@ -66,12 +71,13 @@ export default function SidebarModeToggle({
             aria-controls={`${mode.value}-panel`}
             tabIndex={isSelected ? 0 : -1}
             onClick={() => onChange(mode.value)}
-            className={`flex h-full flex-1 items-center justify-center px-4 text-sm transition-all ${
+            className={`flex flex-1 items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] transition-none ${
               isSelected
-                ? "bg-white font-semibold text-slate-900"
-                : "font-medium text-slate-500 hover:bg-slate-200/50"
+                ? "border-b-2 border-black bg-white text-black"
+                : "bg-surface-container-low text-neutral-400 hover:bg-white"
             }`}
           >
+            <MaterialIcon name={mode.icon} className="h-[14px] w-[14px] shrink-0" />
             {mode.label}
           </button>
         );

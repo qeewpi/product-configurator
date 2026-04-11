@@ -21,10 +21,10 @@ function SourceBadge({
 }) {
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-1 text-[11px] font-medium ${
+      className={`inline-flex items-center px-2 py-1 text-[12px] font-bold uppercase ${
         tone === "accent"
           ? "bg-black text-white"
-          : "bg-slate-100 text-slate-700"
+          : "bg-surface-container-high text-neutral-700"
       }`}
     >
       {label}
@@ -81,31 +81,32 @@ function PreviewArtwork({
         };
 
   const previewFrameClasses =
-    "relative overflow-hidden border border-slate-200 bg-white";
+    "relative overflow-hidden border border-surface-container-highest bg-white";
   const frameStyle = {
     backgroundImage:
-      "linear-gradient(45deg, rgba(228, 228, 231, 0.95) 25%, transparent 25%, transparent 75%, rgba(228, 228, 231, 0.95) 75%, rgba(228, 228, 231, 0.95)), linear-gradient(45deg, rgba(228, 228, 231, 0.95) 25%, transparent 25%, transparent 75%, rgba(228, 228, 231, 0.95) 75%, rgba(228, 228, 231, 0.95))",
+      "linear-gradient(45deg, rgba(228, 228, 228, 0.95) 25%, transparent 25%, transparent 75%, rgba(228, 228, 228, 0.95) 75%, rgba(228, 228, 228, 0.95)), linear-gradient(45deg, rgba(228, 228, 228, 0.95) 25%, transparent 25%, transparent 75%, rgba(228, 228, 228, 0.95) 75%, rgba(228, 228, 228, 0.95))",
     backgroundPosition: "0 0, 10px 10px",
     backgroundSize: "20px 20px",
   } as const;
 
   return (
+    <>
     <div className={previewFrameClasses} style={frameStyle}>
-      <div className="flex min-h-[320px] items-center justify-center p-4">
+      <div className="flex h-64 items-center justify-center p-4">
         {tracePreview.status === "loading" && !logo.vectorSvg ? (
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="h-10 w-10 animate-spin border-4 border-slate-200 border-t-black" />
+            <div className="h-10 w-10 animate-spin border-4 border-surface-container-highest border-t-black" />
             <div>
-              <p className="text-sm font-medium text-slate-700">
+              <p className="text-sm font-medium text-on-surface-variant">
                 Updating SVG preview...
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-outline">
                 The traced SVG will appear here once the new pass finishes.
               </p>
             </div>
           </div>
         ) : logo.vectorSvg && previewUrl ? (
-          <div className="relative flex min-h-[280px] w-full items-center justify-center overflow-auto">
+          <div className="relative flex h-full w-full items-center justify-center overflow-auto">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={previewUrl}
@@ -124,7 +125,7 @@ function PreviewArtwork({
 
             {tracePreview.status === "loading" ? (
               <div className="absolute inset-0 flex items-start justify-end p-3">
-                <div className="border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+                <div className="border border-surface-container-highest bg-white/90 px-3 py-1 text-xs text-on-surface-variant backdrop-blur">
                   Updating SVG preview...
                 </div>
               </div>
@@ -132,7 +133,7 @@ function PreviewArtwork({
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-12 w-12 items-center justify-center bg-slate-100 text-slate-400">
+            <div className="flex h-12 w-12 items-center justify-center bg-surface-container text-outline-variant">
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -147,12 +148,12 @@ function PreviewArtwork({
               </svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-700">
+              <p className="text-sm font-medium text-on-surface-variant">
                 {tracePreview.status === "error"
                   ? "Preview update failed"
                   : "Waiting for SVG preview"}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-outline">
                 {tracePreview.status === "error"
                   ? "Fix the trace settings or upload a new source to continue."
                   : "The traced SVG will appear here after the first pass."}
@@ -162,68 +163,69 @@ function PreviewArtwork({
         )}
       </div>
 
-      <div className="flex items-start justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3">
-        <div className="min-w-0 space-y-1">
-          <p
-            className="truncate text-sm font-medium text-slate-900"
-            title={logo.originalFileName ?? "Untitled logo"}
-          >
-            {logo.originalFileName ?? "Untitled logo"}
-          </p>
-          <p className="text-xs text-slate-500">
-            {sourceKind === "svg"
-              ? "SVG source"
-              : sourceKind === "raster"
-                ? "Raster source"
-                : "Unknown source"}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <SourceBadge
-            label={logo.traceSettings.style === "lineart" ? "B/W" : "Color"}
-            tone="accent"
-          />
-          {sourceKind === "svg" ? (
-            <SourceBadge label="Direct SVG" />
-          ) : (
-            <SourceBadge label="Trace Preview" />
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-        <span>Zoom</span>
-        <div
-          className="grid border border-slate-200 bg-slate-100 p-0.5"
-          style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
-        >
-          {(
-            [
-              { value: "fit", label: "Fit" },
-              { value: "100", label: "100%" },
-              { value: "200", label: "200%" },
-            ] as Array<{ value: ZoomLevel; label: string }>
-          ).map((option) => {
-            const isSelected = zoom === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setZoom(option.value)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                  isSelected
-                    ? "bg-white text-slate-900"
-                    : "text-slate-500 hover:bg-slate-200/50"
-                }`}
+      <div className="bg-surface-container-low px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <div className="space-y-0.5">
+              <p
+                className="truncate text-sm font-medium text-on-surface"
+                title={logo.originalFileName ?? "Untitled logo"}
               >
-                {option.label}
-              </button>
-            );
-          })}
+                {logo.originalFileName ?? "Untitled logo"}
+              </p>
+              <p className="text-[13px] uppercase tracking-tighter text-outline">
+                {sourceKind === "svg"
+                  ? "SVG source"
+                  : sourceKind === "raster"
+                    ? "Raster source"
+                    : "Unknown source"}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-1">
+            <SourceBadge
+              label={logo.traceSettings.style === "lineart" ? "B/W" : "Color"}
+              tone="accent"
+            />
+            {sourceKind === "svg" ? (
+              <SourceBadge label="Direct SVG" />
+            ) : (
+              <SourceBadge label="Trace Preview" />
+            )}
+          </div>
         </div>
       </div>
     </div>
+
+    <div className="mt-4 flex items-center justify-between">
+      <span className="text-[14px] font-bold uppercase tracking-wider text-on-surface">Zoom</span>
+      <div className="flex gap-0.5 bg-surface-container-low p-0.5">
+        {(
+          [
+            { value: "fit", label: "FIT" },
+            { value: "100", label: "100%" },
+            { value: "200", label: "200%" },
+          ] as Array<{ value: ZoomLevel; label: string }>
+        ).map((option) => {
+          const isSelected = zoom === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setZoom(option.value)}
+              className={`px-3 py-1 text-[13px] font-bold transition-none ${
+                isSelected
+                  ? "bg-white text-on-surface"
+                  : "text-outline hover:bg-white"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+    </>
   );
 }
 
@@ -237,22 +239,22 @@ export default function SvgPreviewPanel({
   const hasUploadedLogo = Boolean(logo.dataUrl || logo.vectorSvg);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div>
-        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-900">
+        <label className="text-[14px] font-bold uppercase tracking-[0.1em] text-on-surface">
           SVG Preview
         </label>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-[14px] text-outline">
           Inspect the traced SVG here before exporting.
         </p>
       </div>
 
       {!hasUploadedLogo ? (
-        <div className="border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
-          <p className="text-sm font-medium text-slate-700">
+        <div className="border border-surface-container-highest bg-surface-container-low px-4 py-8 text-center">
+          <p className="text-sm font-medium text-on-surface-variant">
             Upload a logo to preview the traced SVG.
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-outline">
             Raster uploads can be tuned here. SVG uploads preview directly.
           </p>
         </div>
@@ -272,7 +274,7 @@ export default function SvgPreviewPanel({
           ) : null}
 
           {sourceKind === "svg" ? (
-            <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="border border-surface-container-highest bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
               Uploaded SVGs are previewed directly and do not need tracing.
             </div>
           ) : null}
