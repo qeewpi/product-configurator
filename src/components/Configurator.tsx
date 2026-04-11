@@ -14,6 +14,7 @@ import SidebarModeToggle, {
 } from "./controls/SidebarModeToggle";
 import SvgPreviewPanel from "./controls/SvgPreviewPanel";
 import ShareModal from "./controls/ShareModal";
+import ViewerModeControls from "./controls/ViewerModeControls";
 import { CASE_MODEL_OPTIONS } from "@/lib/model-catalog";
 import { useDesignStore } from "@/lib/store";
 import { exportDesignAsStl } from "@/lib/stl-export";
@@ -61,6 +62,8 @@ function ConfigureSidebarContent() {
       hidden={false}
       className="space-y-6"
     >
+      <ViewerModeControls />
+
       <section className="space-y-4">
         <div className="space-y-1">
           <label className="text-[14px] font-bold uppercase tracking-[0.1em] text-on-surface">
@@ -227,31 +230,6 @@ export default function Configurator() {
       {/* Canvas area */}
       <div className="canvas-grid relative min-h-0 flex-1 bg-surface-container-low">
         <Scene />
-
-        {/* Tool panel overlay */}
-        <div className="absolute left-6 top-6 flex flex-col border border-surface-container-highest bg-white">
-          <button
-            type="button"
-            title="Pan"
-            className="flex h-11 w-11 items-center justify-center border-b border-surface-container-highest hover:bg-surface-container-low"
-          >
-            <MaterialIcon name="pan_tool" className="h-[19px] w-[19px]" />
-          </button>
-          <button
-            type="button"
-            title="Reset view"
-            className="flex h-11 w-11 items-center justify-center border-b border-surface-container-highest hover:bg-surface-container-low"
-          >
-            <MaterialIcon name="restart_alt" className="h-[19px] w-[19px]" />
-          </button>
-          <button
-            type="button"
-            title="Help"
-            className="flex h-11 w-11 items-center justify-center hover:bg-surface-container-low"
-          >
-            <MaterialIcon name="help" className="h-[19px] w-[19px]" />
-          </button>
-        </div>
       </div>
 
       {/* Sidebar */}

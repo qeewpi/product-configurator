@@ -1,6 +1,8 @@
 export type ExportQuality = "fast" | "balanced" | "detailed";
 export type ArtworkStyle = "flat" | "emboss";
 export type CaseModelId = "compact-3-lid" | "rugged";
+export type ViewerMode = "assembled" | "flat-lay" | "isolated";
+export type ViewerPartKey = "top-lid" | "bottom-tray" | "clips";
 export type LogoBackgroundMode = "auto" | "white" | "black" | "none";
 export type LogoSourceKind = "raster" | "svg" | null;
 export type TraceStyle = "color" | "lineart";
@@ -37,6 +39,12 @@ export interface LogoConfig {
   position: { x: number; y: number };
   scale: number;
   color: string | null;
+}
+
+export interface ViewerVisibleParts {
+  "top-lid": boolean;
+  "bottom-tray": boolean;
+  clips: boolean;
 }
 
 export interface DesignConfig {

@@ -5,6 +5,9 @@ import type {
   DesignConfig,
   ExportQuality,
   LogoConfig,
+  ViewerMode,
+  ViewerPartKey,
+  ViewerVisibleParts,
 } from "@/types/design";
 import {
   DEFAULT_TRACE_PRESET,
@@ -15,6 +18,11 @@ import {
 import { resolveLogoSourceKind } from "@/lib/logo-svg-preview";
 
 const LOGO_VERTICAL_CENTER_OFFSET = -40;
+const DEFAULT_VISIBLE_PARTS: ViewerVisibleParts = {
+  "top-lid": true,
+  "bottom-tray": true,
+  clips: true,
+};
 
 function createDefaultLogoConfig(): LogoConfig {
   return {
@@ -34,12 +42,16 @@ function createDefaultLogoConfig(): LogoConfig {
 }
 
 interface DesignStore extends DesignConfig {
+  viewerMode: ViewerMode;
+  visibleParts: ViewerVisibleParts;
   setModel: (model: CaseModelId) => void;
   setRegionColor: (index: 0 | 1 | 2, color: string) => void;
   setBottomColor: (color: string) => void;
   setClipsColor: (color: string) => void;
   setExportQuality: (quality: ExportQuality) => void;
   setArtworkStyle: (style: ArtworkStyle) => void;
+  setViewerMode: (mode: ViewerMode) => void;
+  setViewerPartVisible: (part: ViewerPartKey, visible: boolean) => void;
   setLogo: (logo: Partial<LogoConfig>) => void;
   clearLogo: () => void;
   serialize: () => DesignConfig;
@@ -59,6 +71,8 @@ const DEFAULT_STATE: DesignConfig = {
 
 export const useDesignStore = create<DesignStore>((set, get) => ({
   ...DEFAULT_STATE,
+  viewerMode: "assembled",
+  visibleParts: DEFAULT_VISIBLE_PARTS,
 
   setModel: (model) => set({ model }),
 
@@ -76,6 +90,43 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
   setExportQuality: (exportQuality) => set({ exportQuality }),
 
   setArtworkStyle: (artworkStyle) => set({ artworkStyle }),
+
+  setViewerMode: (viewerMode) =>
+    set(() => ({
+      viewerMode,
+      visibleParts:
+        viewerMode === "isolated" ? get().visibleParts : DEFAULT_VISIBLE_PARTS,
+    })),
+
+  setViewerPartVisible: (part, visible) =>
+    set((state) => {
+      if (state.visibleParts[part] === visible) {
+        return state;
+      }
+
+      if (visible) {
+        return {
+          visibleParts: {
+            ...state.visibleParts,
+            [part]: true,
+          },
+        };
+      }
+
+      const nextVisibleParts = {
+        ...state.visibleParts,
+        [part]: false,
+      };
+      const visibleCount = Object.values(nextVisibleParts).filter(Boolean).length;
+
+      if (visibleCount === 0) {
+        return state;
+      }
+
+      return {
+        visibleParts: nextVisibleParts,
+      };
+    }),
 
   setLogo: (logo) =>
     set((state) => ({
@@ -141,5 +192,10 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
       },
     })),
 
-  reset: () => set({ ...DEFAULT_STATE }),
+  reset: () =>
+    set({
+      ...DEFAULT_STATE,
+      viewerMode: "assembled",
+      visibleParts: DEFAULT_VISIBLE_PARTS,
+    }),
 }));

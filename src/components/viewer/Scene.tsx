@@ -6,6 +6,7 @@ import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import DeckCaseModel from "./DeckCaseModel";
+import { useDesignStore } from "@/lib/store";
 
 const CAMERA_POSITION: [number, number, number] = [0, 0, 220];
 const CAMERA_TARGET: [number, number, number] = [0, 0, 0];
@@ -13,6 +14,11 @@ const KEYBOARD_PAN_SPEED = 2.2;
 const KEYBOARD_PAN_ACCELERATION = 10;
 const KEYBOARD_PAN_DAMPING = 7;
 const VIEWER_TUTORIAL_STORAGE_KEY = "viewer-tutorial-dismissed";
+
+type LayoutBounds = {
+  center: [number, number, number];
+  size: [number, number, number];
+};
 
 function LoadingFallback() {
   return (
@@ -84,8 +90,13 @@ function KeyboardCameraMotion({
 export default function Scene() {
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const pressedKeysRef = useRef(new Set<string>());
+  const pendingLayoutResetRef = useRef(true);
   const [isHandToolPinned, setIsHandToolPinned] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [layoutBounds, setLayoutBounds] = useState<LayoutBounds | null>(null);
+  const viewerMode = useDesignStore((state) => state.viewerMode);
+  const model = useDesignStore((state) => state.model);
+  const visibleParts = useDesignStore((state) => state.visibleParts);
   const [isTutorialOpen, setIsTutorialOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return (
@@ -94,13 +105,22 @@ export default function Scene() {
   });
   const isHandToolActive = isHandToolPinned || isSpacePressed;
 
-  const applyDefaultCamera = useCallback(() => {
+  const applyDefaultCamera = useCallback((bounds: LayoutBounds | null) => {
     const controls = controlsRef.current;
     if (!controls) return;
 
-    controls.object.position.set(...CAMERA_POSITION);
+    const nextCenter = bounds?.center ?? CAMERA_TARGET;
+    const nextSize = bounds?.size ?? [0, 0, 0];
+    const [sizeX, sizeY, sizeZ] = nextSize;
+    const dominantSize = Math.max(sizeX, sizeY, 60);
+    const baseDistance =
+      dominantSize /
+      (2 * Math.tan(THREE.MathUtils.degToRad(45 / 2)));
+    const distance = THREE.MathUtils.clamp(baseDistance + sizeZ * 1.5, 90, 320);
+
+    controls.object.position.set(nextCenter[0], nextCenter[1], nextCenter[2] + distance);
     controls.object.up.set(0, 1, 0);
-    controls.target.set(...CAMERA_TARGET);
+    controls.target.set(...nextCenter);
     controls.update();
   }, []);
 
@@ -108,15 +128,33 @@ export default function Scene() {
     const controls = controlsRef.current;
     if (!controls) return;
 
-    applyDefaultCamera();
     controls.saveState();
-  }, [applyDefaultCamera]);
+  }, []);
+
+  useEffect(() => {
+    pendingLayoutResetRef.current = true;
+  }, [model, viewerMode]);
+
+  useEffect(() => {
+    if (viewerMode === "isolated") {
+      pendingLayoutResetRef.current = true;
+    }
+  }, [viewerMode, visibleParts]);
+
+  useEffect(() => {
+    if (!layoutBounds || !pendingLayoutResetRef.current) {
+      return;
+    }
+
+    applyDefaultCamera(layoutBounds);
+    pendingLayoutResetRef.current = false;
+  }, [applyDefaultCamera, layoutBounds]);
 
   const resetCamera = useCallback(() => {
-    applyDefaultCamera();
+    applyDefaultCamera(layoutBounds);
     setIsHandToolPinned(false);
     setIsSpacePressed(false);
-  }, [applyDefaultCamera]);
+  }, [applyDefaultCamera, layoutBounds]);
 
   const dismissTutorial = () => {
     setIsTutorialOpen(false);
@@ -318,7 +356,7 @@ export default function Scene() {
         <directionalLight position={[-50, 50, 80]} intensity={0.5} />
 
         <Suspense fallback={<LoadingFallback />}>
-          <DeckCaseModel />
+          <DeckCaseModel onLayoutBoundsChange={setLayoutBounds} />
         </Suspense>
 
         <OrbitControls

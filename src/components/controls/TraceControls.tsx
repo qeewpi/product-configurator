@@ -308,12 +308,6 @@ export default function TraceControls() {
     searchParams.get("traceAdvanced") === "open"
   );
 
-  useEffect(() => {
-    if (searchParams.get("traceAdvanced") === "open") {
-      setAdvancedOpen(true);
-    }
-  }, [searchParams]);
-
   const hasLogo = Boolean(logo.dataUrl || logo.vectorSvg);
   const shouldShowRasterControls = sourceKind === "raster";
 
