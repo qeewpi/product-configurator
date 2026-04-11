@@ -1,5 +1,8 @@
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import {
+  mergeGeometries,
+  mergeVertices,
+} from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { describeLidPanelGeometry, getTopLidBounds } from "@/lib/deck-case-artwork";
 import { CASE_MODELS } from "@/lib/model-catalog";
 import {
@@ -65,6 +68,18 @@ function compareRemainingComponents(
   return b.faceCount - a.faceCount;
 }
 
+function createRuggedLidGeometry(geometry: THREE.BufferGeometry) {
+  const smoothedGeometry = mergeVertices(geometry, 1e-6);
+  smoothedGeometry.computeVertexNormals();
+  smoothedGeometry.normalizeNormals();
+  const nextGeometry = smoothedGeometry.toNonIndexed();
+  nextGeometry.computeBoundingBox();
+  nextGeometry.computeBoundingSphere();
+  geometry.dispose();
+  smoothedGeometry.dispose();
+  return nextGeometry;
+}
+
 export function prepareCaseModel(
   model: CaseModelId,
   geometry: THREE.BufferGeometry
@@ -111,9 +126,16 @@ export function prepareCaseModel(
     (component) => component !== bottomComponent
   );
 
-  const lidGeometries = lidComponents.map((component) =>
-    extractComponentGeometry(geometry, component.faceIndices)
-  );
+  const lidGeometries = lidComponents.map((component) => {
+    const extractedGeometry = extractComponentGeometry(
+      geometry,
+      component.faceIndices
+    );
+
+    return model === "rugged"
+      ? createRuggedLidGeometry(extractedGeometry)
+      : extractedGeometry;
+  });
   const bottomGeometry = extractComponentGeometry(
     geometry,
     bottomComponent.faceIndices
