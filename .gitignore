@@ -58,3 +58,7 @@ CLAUDE.md
 _agents/
 _agent/
 reference/design
+.stitch/
+.junie/
+scripts/
+skills-lock.json
