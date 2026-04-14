@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import ColorPanel from "./controls/ColorPanel";
+import LogoSelector from "./controls/LogoSelector";
 import LogoUpload from "./controls/LogoUpload";
 import LogoPlacementControls from "./controls/LogoPlacementControls";
 import LogoAppearanceControls from "./controls/LogoAppearanceControls";
@@ -101,6 +102,7 @@ function ConfigureSidebarContent() {
       </section>
 
       <section className="space-y-6">
+        <LogoSelector />
         <LogoUpload />
         <LogoPlacementControls />
         <LogoAppearanceControls />

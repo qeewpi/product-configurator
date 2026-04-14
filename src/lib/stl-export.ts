@@ -17,6 +17,7 @@ import type {
   DesignConfig,
   ExportRequest,
   ExportQuality,
+  LogoConfig,
   LogoSourceKind,
   ViewerPartKey,
 } from "@/types/design";
@@ -25,6 +26,7 @@ import {
   getContinuousPanelArtworkSlices,
   collectExportPartColors,
   type LidPanelGeometry,
+  type TopLidBounds,
   validateArtworkPlacement,
 } from "@/lib/deck-case-artwork";
 import { traceRasterBlobToSvg } from "@/lib/raster-trace-client";
@@ -100,7 +102,6 @@ function getArtworkDepth(style: ArtworkStyle) {
 function getArtworkBaseZ(
   panel: LidPanelGeometry,
   style: ArtworkStyle,
-  model: CaseModelId,
 ) {
   if (style === "flat") {
     return panel.exportSurfaceZ + FLAT_ARTWORK_LIFT;
@@ -213,29 +214,63 @@ function canvasToBlob(canvas: HTMLCanvasElement) {
   });
 }
 
-async function createEmbossGeometries(config: DesignConfig) {
-  const { lidPanelGeometries, topLidBounds } = await getPreparedModel(
-    config.model,
-  );
-  const artworkBounds = getArtworkBounds(config.logo, topLidBounds);
-  const logoSourceKind = resolveLogoSourceKind(config.logo);
+function getCombinedArtworkBounds(
+  logos: LogoConfig[],
+  topLidBounds: TopLidBounds,
+) {
+  if (logos.length === 0) {
+    return null;
+  }
+
+  const first = getArtworkBounds(logos[0], topLidBounds);
+  let minX = first.minX;
+  let maxX = first.maxX;
+  let minY = first.minY;
+  let maxY = first.maxY;
+
+  for (const logo of logos.slice(1)) {
+    const bounds = getArtworkBounds(logo, topLidBounds);
+    minX = Math.min(minX, bounds.minX);
+    maxX = Math.max(maxX, bounds.maxX);
+    minY = Math.min(minY, bounds.minY);
+    maxY = Math.max(maxY, bounds.maxY);
+  }
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+  } satisfies ReturnType<typeof getArtworkBounds>;
+}
+
+async function createEmbossGeometriesForLogo(
+  config: DesignConfig,
+  logo: LogoConfig,
+  preparedModel: PreparedCaseModel,
+) {
+  const { lidPanelGeometries, topLidBounds } = preparedModel;
+  const artworkBounds = getArtworkBounds(logo, topLidBounds);
+  const logoSourceKind = resolveLogoSourceKind(logo);
 
   // Prefer the stored vectorSvg for all logos, including traced raster uploads.
   // This keeps export geometry aligned with the preview instead of retracing
   // sliced raster crops during export.
-  if (config.logo.vectorSvg) {
+  if (logo.vectorSvg) {
     if (config.model === "compact-3-lid" && lidPanelGeometries.length > 1) {
       const slicedVectorGeometries =
         await createSlicedSvgEmbossGeometries(
           config.model,
-          config.logo.vectorSvg,
+          logo.vectorSvg,
           artworkBounds,
           lidPanelGeometries,
           config.exportQuality,
           config.artworkStyle,
           logoSourceKind,
-          config.logo.color,
-          config.logo.traceSettings,
+          logo.color,
+          logo.traceSettings,
         );
 
       if (slicedVectorGeometries.length > 0) {
@@ -245,14 +280,14 @@ async function createEmbossGeometries(config: DesignConfig) {
 
     const vectorGeometries = await createDirectSvgEmbossGeometries(
       config.model,
-      config.logo.vectorSvg,
+      logo.vectorSvg,
       artworkBounds,
       lidPanelGeometries,
       config.exportQuality,
       config.artworkStyle,
       logoSourceKind,
-      config.logo.color,
-      config.logo.traceSettings.style,
+      logo.color,
+      logo.traceSettings.style,
     );
 
     if (vectorGeometries.length > 0) {
@@ -261,8 +296,8 @@ async function createEmbossGeometries(config: DesignConfig) {
   }
 
   // Fallback: re-trace from raster source if vectorSvg didn't produce geometry
-  if (isRasterLogo(config.logo)) {
-    const rasterSource = config.logo.rasterSourceDataUrl ?? config.logo.dataUrl;
+  if (isRasterLogo(logo)) {
+    const rasterSource = logo.rasterSourceDataUrl ?? logo.dataUrl;
     if (!rasterSource) {
       return [];
     }
@@ -285,7 +320,7 @@ async function createEmbossGeometries(config: DesignConfig) {
           backgroundCanvas.width,
           backgroundCanvas.height,
         ),
-        config.logo.backgroundMode,
+        logo.backgroundMode,
       );
     }
 
@@ -307,12 +342,12 @@ async function createEmbossGeometries(config: DesignConfig) {
           paletteCanvas.height,
         ),
         resolvedBackgroundMode,
-        config.logo.traceSettings.style === "lineart" ? "bw" : "color",
+        logo.traceSettings.style === "lineart" ? "bw" : "color",
         { minForegroundAlpha: LINE_ART_MIN_ALPHA, edgeSoftness: 0.08 },
       );
       exportPaletteColors = resolveTracePaletteColors(
         tracedSource.imageData,
-        config.logo.traceSettings,
+        logo.traceSettings,
       );
     }
 
@@ -324,8 +359,8 @@ async function createEmbossGeometries(config: DesignConfig) {
       config.exportQuality,
       config.artworkStyle,
       resolvedBackgroundMode,
-      config.logo.traceSettings,
-      config.logo.color,
+      logo.traceSettings,
+      logo.color,
       exportPaletteColors,
     );
 
@@ -337,6 +372,26 @@ async function createEmbossGeometries(config: DesignConfig) {
   return [];
 }
 
+async function createEmbossGeometries(config: DesignConfig) {
+  if (config.logos.length === 0) {
+    return [];
+  }
+
+  const preparedModel = await getPreparedModel(config.model);
+  const geometries: ExportPart[] = [];
+
+  for (const logo of config.logos) {
+    const logoGeometries = await createEmbossGeometriesForLogo(
+      config,
+      logo,
+      preparedModel,
+    );
+    geometries.push(...logoGeometries);
+  }
+
+  return geometries;
+}
+
 async function createSlicedSvgEmbossGeometries(
   model: CaseModelId,
   svg: string,
@@ -346,7 +401,7 @@ async function createSlicedSvgEmbossGeometries(
   style: ArtworkStyle,
   sourceKind: LogoSourceKind,
   logoColor: string | null,
-  traceSettings: DesignConfig["logo"]["traceSettings"],
+  traceSettings: LogoConfig["traceSettings"],
 ) {
   const profile = getExportProfile(quality);
   const sourceSvg = prepareSvgForRendering(svg, {
@@ -462,7 +517,7 @@ function getExportProfile(quality: ExportQuality) {
 async function traceImageDataToSvg(
   imageData: ImageData,
   backgroundMode: ResolvedLogoBackgroundMode,
-  traceSettings: DesignConfig["logo"]["traceSettings"],
+  traceSettings: LogoConfig["traceSettings"],
 ) {
   const tracedSource = createTraceImageData(
     imageData,
@@ -616,7 +671,7 @@ function getTriangleCount(geometry: THREE.BufferGeometry) {
 
 function logExportStats(
   config: DesignConfig,
-  artworkBounds: ReturnType<typeof getArtworkBounds>,
+  artworkBounds: ReturnType<typeof getArtworkBounds> | null,
   baseParts: ExportPart[],
   embossParts: ExportPart[],
 ) {
@@ -632,20 +687,19 @@ function logExportStats(
     (sum, part) => sum + getTriangleCount(part.geometry),
     0,
   );
-  const artworkValidation = validateArtworkPlacement(
-    artworkBounds,
-    embossParts,
-  );
+  const artworkValidation = artworkBounds
+    ? validateArtworkPlacement(artworkBounds, embossParts)
+    : null;
 
   console.info("[3MF export]", {
     exportQuality: config.exportQuality,
     artworkStyle: config.artworkStyle,
-    hasLogo: Boolean(config.logo.dataUrl || config.logo.vectorSvg),
+    hasLogo: config.logos.length > 0,
     meshCount: baseParts.length + embossParts.length,
     baseTriangles,
     embossTriangles,
     artworkBounds,
-    exportArtworkValid: artworkValidation.isValid,
+    exportArtworkValid: artworkValidation?.isValid ?? null,
     exportArtworkColors: collectExportPartColors(embossParts),
   });
 }
@@ -742,7 +796,7 @@ async function createDirectSvgEmbossGeometries(
   style: ArtworkStyle,
   sourceKind: LogoSourceKind,
   logoColor: string | null,
-  traceStyle: DesignConfig["logo"]["traceSettings"]["style"],
+  traceStyle: LogoConfig["traceSettings"]["style"],
 ) {
   const profile = getExportProfile(quality);
   const sourceSvg = prepareSvgForRendering(svg, {
@@ -767,7 +821,7 @@ async function createDirectSvgEmbossGeometries(
   const scaleX = artworkBounds.width / paintedBounds.width;
   const scaleY = artworkBounds.height / paintedBounds.height;
   const baseZ = Math.max(
-    ...lidPanelGeometries.map((panel) => getArtworkBaseZ(panel, style, model)),
+    ...lidPanelGeometries.map((panel) => getArtworkBaseZ(panel, style)),
   );
   const parts: ExportPart[] = [];
 
@@ -847,7 +901,7 @@ async function createRasterVectorEmbossGeometries(
   quality: ExportQuality,
   style: ArtworkStyle,
   backgroundMode: ResolvedLogoBackgroundMode,
-  traceSettings: DesignConfig["logo"]["traceSettings"],
+  traceSettings: LogoConfig["traceSettings"],
   logoColor: string | null,
   exportPaletteColors: string[],
 ) {
@@ -914,7 +968,7 @@ async function createRasterVectorEmbossGeometries(
     const sliceViewBox = getSvgViewBox(tracedSlice.svg);
     const scaleX = slice.overlapWidth / sliceViewBox.width;
     const scaleY = slice.overlapHeight / sliceViewBox.height;
-    const baseZ = getArtworkBaseZ(slice.panel, style, model);
+    const baseZ = getArtworkBaseZ(slice.panel, style);
     const shapeCandidates: ShapeCandidate[] = [];
     const holeCandidates: HoleCandidate[] = [];
 
@@ -1304,7 +1358,7 @@ export async function exportDesignAs3MF(request: ExportRequest) {
   const preparedModel = await getPreparedModel(config.model);
   const baseParts = createBaseExportParts(config, preparedModel);
   const { topLidBounds } = preparedModel;
-  const artworkBounds = getArtworkBounds(config.logo, topLidBounds);
+  const artworkBounds = getCombinedArtworkBounds(config.logos, topLidBounds);
   const embossParts = collectMergedEmbossParts(
     await createEmbossGeometries(config),
   );

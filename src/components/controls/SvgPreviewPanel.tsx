@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useDesignStore } from "@/lib/store";
 import {
   createLogoPreviewBlobUrl,
   getSvgPreviewDimensions,
   resolveLogoSourceKind,
 } from "@/lib/logo-svg-preview";
+import { useActiveLogo } from "@/lib/use-active-logo";
 import type { TracePreviewState } from "@/lib/logo-trace";
 import type { LogoConfig } from "@/types/design";
 
@@ -234,9 +234,9 @@ export default function SvgPreviewPanel({
 }: {
   tracePreview: TracePreviewState;
 }) {
-  const logo = useDesignStore((state) => state.logo);
-  const sourceKind = resolveLogoSourceKind(logo);
-  const hasUploadedLogo = Boolean(logo.dataUrl || logo.vectorSvg);
+  const { logo } = useActiveLogo();
+  const sourceKind = logo ? resolveLogoSourceKind(logo) : null;
+  const hasUploadedLogo = logo && (logo.dataUrl || logo.vectorSvg);
 
   return (
     <div className="space-y-4">
@@ -249,7 +249,7 @@ export default function SvgPreviewPanel({
         </p>
       </div>
 
-      {!hasUploadedLogo ? (
+      {!hasUploadedLogo || !logo || !sourceKind ? (
         <div className="border border-surface-container-highest bg-surface-container-low px-4 py-8 text-center">
           <p className="text-sm font-medium text-on-surface-variant">
             Upload a logo to preview the traced SVG.

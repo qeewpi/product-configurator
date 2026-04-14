@@ -1,6 +1,8 @@
 "use client";
 
 export type MaterialIconName =
+  | "add"
+  | "close"
   | "expand_less"
   | "expand_more"
   | "file_download"
@@ -13,6 +15,10 @@ export type MaterialIconName =
   | "upload_file";
 
 const ICON_PATHS: Record<MaterialIconName, string[]> = {
+  add: ["M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"],
+  close: [
+    "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+  ],
   expand_less: ["M7.41 14.59 12 10l4.59 4.59L18 13.17 12 7.17l-6 6z"],
   expand_more: ["M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"],
   file_download: [

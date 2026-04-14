@@ -1,14 +1,15 @@
 "use client";
 
 import { useDesignStore } from "@/lib/store";
+import { useActiveLogo } from "@/lib/use-active-logo";
 import type { ArtworkStyle } from "@/types/design";
 
 export default function LogoAppearanceControls() {
-  const logo = useDesignStore((state) => state.logo);
+  const { logo } = useActiveLogo();
   const artworkStyle = useDesignStore((state) => state.artworkStyle);
   const setArtworkStyle = useDesignStore((state) => state.setArtworkStyle);
 
-  if (!logo.dataUrl && !logo.vectorSvg) {
+  if (!logo || (!logo.dataUrl && !logo.vectorSvg)) {
     return null;
   }
 

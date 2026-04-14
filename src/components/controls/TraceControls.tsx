@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import MaterialIcon from "@/components/MaterialIcon";
 import { FILAMENT_PALETTE } from "@/lib/filaments";
 import { useDesignStore } from "@/lib/store";
+import { useActiveLogo } from "@/lib/use-active-logo";
 import {
   getDefaultTraceSettings,
   isTraceSettingsPresetMatch,
@@ -298,20 +299,19 @@ function SliderRow({
 
 export default function TraceControls() {
   const searchParams = useSearchParams();
-  const logo = useDesignStore((state) => state.logo);
+  const { logo, setActiveLogo } = useActiveLogo();
   const panelColors = useDesignStore((state) => state.panelColors);
   const bottomColor = useDesignStore((state) => state.bottomColor);
   const clipsColor = useDesignStore((state) => state.clipsColor);
-  const setLogo = useDesignStore((state) => state.setLogo);
-  const sourceKind = resolveLogoSourceKind(logo);
+  const sourceKind = logo ? resolveLogoSourceKind(logo) : null;
   const [advancedOpen, setAdvancedOpen] = useState(
     searchParams.get("traceAdvanced") === "open"
   );
 
-  const hasLogo = Boolean(logo.dataUrl || logo.vectorSvg);
+  const hasLogo = logo && (logo.dataUrl || logo.vectorSvg);
   const shouldShowRasterControls = sourceKind === "raster";
 
-  if (!hasLogo) {
+  if (!hasLogo || !logo) {
     return null;
   }
 
@@ -321,7 +321,7 @@ export default function TraceControls() {
         ? "balanced"
         : logo.traceSettings.preset
     ) as Exclude<TracePreset, "custom">;
-    setLogo({
+    setActiveLogo({
       traceSettings: {
         ...getDefaultTraceSettings(style, nextPreset),
         style,
@@ -332,7 +332,7 @@ export default function TraceControls() {
   };
 
   const handlePresetChange = (preset: Exclude<TracePreset, "custom">) => {
-    setLogo({
+    setActiveLogo({
       traceSettings: {
         ...getDefaultTraceSettings(logo.traceSettings.style, preset),
         style: logo.traceSettings.style,
@@ -358,7 +358,7 @@ export default function TraceControls() {
         nextSettings.preset
       );
 
-    setLogo({
+    setActiveLogo({
       traceSettings: {
         ...nextSettings,
         preset: presetMatches ? nextSettings.preset : "custom",
@@ -379,7 +379,7 @@ export default function TraceControls() {
         nextSettings.preset
       );
 
-    setLogo({
+    setActiveLogo({
       traceSettings: {
         ...nextSettings,
         preset: presetMatches ? nextSettings.preset : "custom",
@@ -400,7 +400,7 @@ export default function TraceControls() {
         nextSettings.preset
       );
 
-    setLogo({
+    setActiveLogo({
       traceSettings: {
         ...nextSettings,
         preset: presetMatches ? nextSettings.preset : "custom",
@@ -409,7 +409,7 @@ export default function TraceControls() {
   };
 
   const updatePaletteColors = (paletteColors: string[]) => {
-    setLogo({
+    setActiveLogo({
       traceSettings: {
         ...logo.traceSettings,
         paletteColors,
@@ -461,7 +461,7 @@ export default function TraceControls() {
             <SelectDropdown
               options={BACKGROUND_MODE_OPTIONS}
               value={logo.backgroundMode}
-              onChange={(value) => setLogo({ backgroundMode: value })}
+              onChange={(value) => setActiveLogo({ backgroundMode: value })}
             />
           </div>
 

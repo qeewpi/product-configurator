@@ -1,14 +1,13 @@
 "use client";
 
-import { useDesignStore } from "@/lib/store";
+import { useActiveLogo } from "@/lib/use-active-logo";
 
 const LOGO_VERTICAL_CENTER_OFFSET = -40;
 
 export default function LogoPlacementControls() {
-  const logo = useDesignStore((state) => state.logo);
-  const setLogo = useDesignStore((state) => state.setLogo);
+  const { logo, setActiveLogo } = useActiveLogo();
 
-  if (!logo.dataUrl && !logo.vectorSvg) {
+  if (!logo || (!logo.dataUrl && !logo.vectorSvg)) {
     return null;
   }
 
@@ -39,7 +38,7 @@ export default function LogoPlacementControls() {
             step={1}
             value={logo.position.x}
             onChange={(event) =>
-              setLogo({
+              setActiveLogo({
                 position: {
                   ...logo.position,
                   x: Number.parseFloat(event.target.value),
@@ -68,7 +67,7 @@ export default function LogoPlacementControls() {
             step={1}
             value={displayedVertical}
             onChange={(event) =>
-              setLogo({
+              setActiveLogo({
                 position: {
                   ...logo.position,
                   y:
@@ -99,7 +98,7 @@ export default function LogoPlacementControls() {
             step={0.05}
             value={logo.scale}
             onChange={(event) =>
-              setLogo({ scale: Number.parseFloat(event.target.value) })
+              setActiveLogo({ scale: Number.parseFloat(event.target.value) })
             }
             className={sliderClassName}
           />

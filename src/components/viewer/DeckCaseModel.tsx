@@ -79,6 +79,15 @@ type PartMesh = {
   color: string;
 };
 
+type LogoTextureMap = Record<string, THREE.Texture>;
+
+type PanelImageOverlay = {
+  key: string;
+  panel: LidPanelGeometry;
+  texture: THREE.Texture;
+  zOffset: number;
+};
+
 function getPartMeshes(
   model: "compact-3-lid" | "rugged",
   lidSections: LidPanelGeometry[],
@@ -127,12 +136,10 @@ export default function DeckCaseModel({
   const panelColors = useDesignStore((s) => s.panelColors);
   const bottomColor = useDesignStore((s) => s.bottomColor);
   const clipsColor = useDesignStore((s) => s.clipsColor);
-  const logo = useDesignStore((s) => s.logo);
+  const logos = useDesignStore((s) => s.logos);
   const artworkStyle = useDesignStore((s) => s.artworkStyle);
   const viewerMode = useDesignStore((s) => s.viewerMode);
   const visibleParts = useDesignStore((s) => s.visibleParts);
-  const { dataUrl, rasterSourceDataUrl, vectorSvg, color, originalFileName } =
-    logo;
 
   const rawGeometry = useLoader(
     STLLoader,
@@ -213,120 +220,114 @@ export default function DeckCaseModel({
     [layout, partBounds]
   );
 
-  const [logoTexture, setLogoTexture] = useState<THREE.Texture | null>(null);
+  const [logoTextures, setLogoTextures] = useState<LogoTextureMap>({});
 
   useEffect(() => {
     onLayoutBoundsChange?.(layoutBounds);
   }, [layoutBounds, onLayoutBoundsChange]);
 
   useEffect(() => {
+    return () => {
+      for (const texture of Object.values(logoTextures)) {
+        texture.dispose();
+      }
+    };
+  }, [logoTextures]);
+
+  useEffect(() => {
     let isCancelled = false;
 
-    if (!vectorSvg && !dataUrl) {
-      Promise.resolve().then(() => {
-        if (!isCancelled) {
-          setLogoTexture((current) => {
-            current?.dispose();
+    void (async () => {
+      const textureEntries = await Promise.all(
+        logos.map(async (logo) => {
+          if (!logo.dataUrl && !logo.vectorSvg) {
             return null;
-          });
-        }
-      });
-    } else {
-        loadLogoPreviewImage({
-          dataUrl,
-          rasterSourceDataUrl,
-          vectorSvg,
-          originalFileName,
-          color,
-          sourceKind: resolveLogoSourceKind({
-            rasterSourceDataUrl,
-            vectorSvg,
-            originalFileName,
-            sourceKind: null,
-          }),
-          traceStyle: logo.traceSettings.style,
-        })
-        .then((image) => {
-          if (!image) {
-            throw new Error("Missing preview source");
           }
 
-          const texture = new THREE.Texture(image);
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.needsUpdate = true;
-
-          if (isCancelled) {
-            texture.dispose();
-            return;
-          }
-
-          setLogoTexture((current) => {
-            current?.dispose();
-            return texture;
-          });
-        })
-        .catch(() => {
-          if (!isCancelled) {
-            setLogoTexture((current) => {
-              current?.dispose();
-              return null;
+          try {
+            const image = await loadLogoPreviewImage({
+              dataUrl: logo.dataUrl,
+              rasterSourceDataUrl: logo.rasterSourceDataUrl,
+              vectorSvg: logo.vectorSvg,
+              originalFileName: logo.originalFileName,
+              color: logo.color,
+              sourceKind: resolveLogoSourceKind(logo),
+              traceStyle: logo.traceSettings.style,
             });
+
+            if (!image) {
+              return null;
+            }
+
+            const texture = new THREE.Texture(image);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+
+            return [logo.id, texture] as const;
+          } catch {
+            return null;
           }
-        });
-    }
+        })
+      );
+
+      if (isCancelled) {
+        for (const entry of textureEntries) {
+          entry?.[1].dispose();
+        }
+        return;
+      }
+
+      const texturePairs = textureEntries.filter(
+        (entry) => entry !== null
+      ) as Array<readonly [string, THREE.Texture]>;
+      const nextTextures = Object.fromEntries(texturePairs) as LogoTextureMap;
+
+      setLogoTextures(() => nextTextures);
+    })();
 
     return () => {
       isCancelled = true;
     };
-  }, [
-    color,
-    dataUrl,
-    logo.traceSettings.style,
-    originalFileName,
-    rasterSourceDataUrl,
-    vectorSvg,
-  ]);
-
-  const artworkBounds = useMemo(() => {
-    return getArtworkBounds(logo, topLidBounds);
-  }, [logo, topLidBounds]);
+  }, [logos]);
 
   const panelImageOverlays = useMemo(() => {
-    if (
-      !logoTexture ||
-      !logoTexture.image ||
-      !artworkBounds.width ||
-      !artworkBounds.height
-    ) {
-      return [];
-    }
+    return logos.flatMap((logo, logoIndex) => {
+      const texture = logoTextures[logo.id];
+      if (!texture?.image) {
+        return [];
+      }
 
-    const sourceImage = logoTexture.image as
-      | HTMLImageElement
-      | HTMLCanvasElement
-      | ImageBitmap;
-    const sourceWidth =
-      "naturalWidth" in sourceImage
-        ? sourceImage.naturalWidth
-        : sourceImage.width;
-    const sourceHeight =
-      "naturalHeight" in sourceImage
-        ? sourceImage.naturalHeight
-        : sourceImage.height;
+      const sourceImage = texture.image as
+        | HTMLImageElement
+        | HTMLCanvasElement
+        | ImageBitmap;
+      const sourceWidth =
+        "naturalWidth" in sourceImage
+          ? sourceImage.naturalWidth
+          : sourceImage.width;
+      const sourceHeight =
+        "naturalHeight" in sourceImage
+          ? sourceImage.naturalHeight
+          : sourceImage.height;
 
-    if (!sourceWidth || !sourceHeight) {
-      return [];
-    }
+      if (!sourceWidth || !sourceHeight) {
+        return [];
+      }
 
-    return getContinuousPanelArtworkSlices(
-      lidSections,
-      artworkBounds,
-      sourceWidth,
-      sourceHeight
-    )
-      .map((slice) => {
+      const artworkBounds = getArtworkBounds(logo, topLidBounds);
+      if (!artworkBounds.width || !artworkBounds.height) {
+        return [];
+      }
+
+      const zOffsetBase = artworkStyle === "emboss" ? 0.35 : 0.02;
+
+      return getContinuousPanelArtworkSlices(
+        lidSections,
+        artworkBounds,
+        sourceWidth,
+        sourceHeight
+      ).map((slice, sliceIndex) => {
         const panel = slice.panel;
-
         const canvas = document.createElement("canvas");
         canvas.width = 1024;
         canvas.height = Math.max(
@@ -335,7 +336,9 @@ export default function DeckCaseModel({
         );
 
         const context = canvas.getContext("2d");
-        if (!context) return null;
+        if (!context) {
+          return null;
+        }
 
         const destX =
           ((slice.overlapMinX - panel.bounds.min.x) / panel.width) * canvas.width;
@@ -362,13 +365,14 @@ export default function DeckCaseModel({
         texture.needsUpdate = true;
 
         return {
+          key: `${logo.id}-${sliceIndex}-${panel.center.x.toFixed(3)}-${panel.center.y.toFixed(3)}`,
           panel: slice.panel,
           texture,
-          zOffset: artworkStyle === "emboss" ? 0.35 : 0.02,
-        };
-      })
-      .filter((overlay): overlay is NonNullable<typeof overlay> => overlay !== null);
-  }, [artworkBounds, artworkStyle, lidSections, logoTexture]);
+          zOffset: zOffsetBase + logoIndex * 0.001,
+        } satisfies PanelImageOverlay;
+      }).filter(Boolean) as PanelImageOverlay[];
+    });
+  }, [artworkStyle, lidSections, logos, logoTextures, topLidBounds]);
 
   useEffect(() => {
     return () => {
@@ -377,12 +381,6 @@ export default function DeckCaseModel({
       }
     };
   }, [panelImageOverlays]);
-
-  useEffect(() => {
-    return () => {
-      logoTexture?.dispose();
-    };
-  }, [logoTexture]);
 
   return (
     <group>
@@ -404,12 +402,13 @@ export default function DeckCaseModel({
         {layout["top-lid"].visible
           ? panelImageOverlays.map((overlay, index) => (
               <mesh
-                key={index}
+                key={overlay.key}
                 position={[
                   overlay.panel.center.x,
                   overlay.panel.center.y,
                   overlay.panel.outerFaceZ + overlay.zOffset,
                 ]}
+                renderOrder={index}
               >
                 <planeGeometry args={[overlay.panel.width, overlay.panel.height]} />
                 <meshStandardMaterial

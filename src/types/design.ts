@@ -27,6 +27,7 @@ export interface TraceSettings {
 }
 
 export interface LogoConfig {
+  id: string;
   dataUrl: string | null;
   rasterSourceDataUrl: string | null;
   vectorSvg: string | null;
@@ -61,7 +62,7 @@ export interface DesignConfig {
   clipsColor: string;
   exportQuality: ExportQuality;
   artworkStyle: ArtworkStyle;
-  logo: LogoConfig;
+  logos: LogoConfig[];
   createdAt?: string;
   updatedAt?: string;
 }

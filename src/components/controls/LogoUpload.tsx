@@ -1,115 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { computeOtsuThreshold, extractInkColor } from "@/lib/logo-background";
-import { getDefaultTraceSettings } from "@/lib/trace-settings";
-import { getClosestFilamentColor } from "@/lib/filaments";
 import MaterialIcon from "@/components/MaterialIcon";
 import {
   createLogoPreviewBlobUrl,
   resolveLogoSourceKind,
 } from "@/lib/logo-svg-preview";
-import { processRasterSourceDataUrl } from "@/lib/logo-trace";
-import { useDesignStore } from "@/lib/store";
-
-const RECOMMENDED_MIN_SOURCE_DIMENSION = 1000;
-const AUTO_UPSCALE_MIN_SOURCE_DIMENSION = 600;
-
-type RasterQualityNotice = {
-  message: string;
-  severity: "warning" | "info";
-};
-
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new window.Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Failed to load image"));
-    image.src = src;
-  });
-}
-
-async function getImageAspectRatio(src: string) {
-  const image = await loadImage(src);
-  return image.naturalWidth > 0 && image.naturalHeight > 0
-    ? image.naturalWidth / image.naturalHeight
-    : 1;
-}
-
-function readFileAsText(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
-}
-
-function createRasterQualityNotice(
-  width: number,
-  height: number,
-  mimeType: string
-): RasterQualityNotice | null {
-  const shortestSide = Math.min(width, height);
-  const isJpeg = mimeType === "image/jpeg";
-
-  if (shortestSide < AUTO_UPSCALE_MIN_SOURCE_DIMENSION) {
-    return {
-      severity: "warning",
-      message: isJpeg
-        ? "Low-resolution JPG detected. We upscaled it before tracing, but a larger PNG or SVG will give cleaner results."
-        : "Low-resolution image detected. We upscaled it before tracing, but a larger PNG or SVG will give cleaner results.",
-    };
-  }
-
-  if (isJpeg) {
-    return {
-      severity: "warning",
-      message:
-        "JPG logos often trace with rough edges. PNG with transparency or SVG will usually look cleaner.",
-    };
-  }
-
-  if (shortestSide < RECOMMENDED_MIN_SOURCE_DIMENSION) {
-    return {
-      severity: "info",
-      message:
-        "This image is on the small side for tracing. A larger PNG or SVG will usually produce cleaner artwork.",
-    };
-  }
-
-  return null;
-}
+import { createDefaultLogoConfig, useDesignStore } from "@/lib/store";
+import { useActiveLogo } from "@/lib/use-active-logo";
+import { prepareLogoUpload, type RasterQualityNotice } from "@/lib/logo-upload";
 
 export default function LogoUpload() {
-  const setLogo = useDesignStore((state) => state.setLogo);
-  const clearLogo = useDesignStore((state) => state.clearLogo);
-  const logo = useDesignStore((state) => state.logo);
+  const { logo } = useActiveLogo();
+  const addLogo = useDesignStore((s) => s.addLogo);
+  const removeLogo = useDesignStore((s) => s.removeLogo);
+  const updateLogo = useDesignStore((s) => s.updateLogo);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [rasterQualityNotice, setRasterQualityNotice] =
     useState<RasterQualityNotice | null>(null);
-  const sourceKind = resolveLogoSourceKind(logo);
+  const sourceKind = logo ? resolveLogoSourceKind(logo) : null;
   const uploadPreviewUrl = useMemo(() => {
+    if (!logo) return null;
     if (!logo.vectorSvg) {
       return logo.dataUrl;
     }
 
     return createLogoPreviewBlobUrl(logo.vectorSvg, {
       color: logo.color,
-      sourceKind,
+      sourceKind: sourceKind,
       traceStyle: logo.traceSettings.style,
     });
-  }, [logo.color, logo.dataUrl, logo.traceSettings.style, logo.vectorSvg, sourceKind]);
+  }, [logo, sourceKind]);
 
   useEffect(() => {
     return () => {
@@ -121,93 +43,18 @@ export default function LogoUpload() {
 
   const handleFile = useCallback(
     async (file: File) => {
-      const isSvg = file.type === "image/svg+xml" || file.name.endsWith(".svg");
-
       setRasterQualityNotice(null);
       setIsConverting(true);
 
       try {
-        if (isSvg) {
-          const dataUrl = await readFileAsDataUrl(file);
-          let vectorSvg = await readFileAsText(file);
+        const prepared = await prepareLogoUpload(file, logo);
+        setRasterQualityNotice(prepared.rasterQualityNotice);
 
-          vectorSvg = vectorSvg.replace(/background:\s*[^;"]+;?/gi, "");
-
-          setLogo({
-            dataUrl,
-            rasterSourceDataUrl: null,
-            vectorSvg,
-            sourceKind: "svg",
-            traceSettings: getDefaultTraceSettings(),
-            aspectRatio: await getImageAspectRatio(dataUrl),
-            backgroundMode: "auto",
-            processedBackgroundMode: null,
-            originalFileName: file.name,
-          });
-          return;
+        if (logo) {
+          updateLogo(logo.id, prepared.patch);
+        } else {
+          addLogo(createDefaultLogoConfig(prepared.patch));
         }
-
-        const rasterSourceDataUrl = await readFileAsDataUrl(file);
-        const image = await loadImage(rasterSourceDataUrl);
-
-        let detectedColor = "#1A1A1A";
-        const canvas = document.createElement("canvas");
-        const scale = Math.min(
-          1,
-          512 / Math.max(image.naturalWidth, image.naturalHeight)
-        );
-        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (ctx) {
-          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const threshold = computeOtsuThreshold(imageData);
-          const ink = extractInkColor(imageData, threshold);
-          detectedColor = getClosestFilamentColor(ink.r, ink.g, ink.b);
-        }
-
-        setRasterQualityNotice(
-          createRasterQualityNotice(
-            image.naturalWidth,
-            image.naturalHeight,
-            file.type || "image/png"
-          )
-        );
-
-        const processed = await processRasterSourceDataUrl(
-          rasterSourceDataUrl,
-          logo.backgroundMode,
-          logo.traceSettings
-        );
-
-        if (
-          logo.backgroundMode === "auto" &&
-          processed.resolvedBackgroundMode === "none"
-        ) {
-          setRasterQualityNotice((currentNotice) =>
-            currentNotice?.severity === "warning"
-              ? currentNotice
-              : {
-                  severity: "info",
-                  message:
-                    "Auto kept the background because it was not confident enough to remove it safely.",
-                }
-          );
-        }
-
-        setLogo({
-          dataUrl: processed.previewDataUrl,
-          rasterSourceDataUrl,
-          vectorSvg: null,
-          sourceKind: "raster",
-          traceSettings: getDefaultTraceSettings(),
-          aspectRatio: await getImageAspectRatio(processed.previewDataUrl),
-          backgroundMode: logo.backgroundMode,
-          processedBackgroundMode: logo.backgroundMode,
-          originalFileName: file.name,
-          color: detectedColor,
-        });
       } catch (error) {
         setRasterQualityNotice({
           severity: "warning",
@@ -220,7 +67,7 @@ export default function LogoUpload() {
         setIsConverting(false);
       }
     },
-    [logo.backgroundMode, logo.traceSettings, setLogo]
+    [addLogo, logo, updateLogo]
   );
 
   const onDrop = useCallback(
@@ -238,13 +85,15 @@ export default function LogoUpload() {
     event.preventDefault();
   }, []);
 
+  const hasImage = logo && (logo.dataUrl || logo.vectorSvg);
+
   return (
     <div className="space-y-4">
       <label className="text-[14px] font-bold uppercase tracking-[0.1em] text-on-surface">
         Logo / Image
       </label>
 
-      {!logo.dataUrl && !logo.vectorSvg ? (
+      {!hasImage ? (
         <div
           onDrop={onDrop}
           onDragOver={onDragOver}
@@ -293,7 +142,7 @@ export default function LogoUpload() {
               type="button"
               onClick={() => {
                 setRasterQualityNotice(null);
-                clearLogo();
+                removeLogo(logo.id);
               }}
               className="text-[13px] font-bold uppercase tracking-wider text-outline-variant transition-colors hover:text-red-600"
             >

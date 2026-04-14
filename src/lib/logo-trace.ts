@@ -12,6 +12,7 @@ import {
 } from "@/lib/trace-palette";
 import { traceRasterDataUrlToSvg } from "@/lib/raster-trace-client";
 import { useDesignStore } from "@/lib/store";
+import { useActiveLogo } from "@/lib/use-active-logo";
 import { resolveLogoSourceKind } from "@/lib/logo-svg-preview";
 import type {
   LogoBackgroundMode,
@@ -156,28 +157,36 @@ export interface TracePreviewState {
 }
 
 export function useLogoTracePreview(): TracePreviewState {
-  const logo = useDesignStore((state) => state.logo);
-  const setLogo = useDesignStore((state) => state.setLogo);
+  const { logo } = useActiveLogo();
+  const updateLogo = useDesignStore((s) => s.updateLogo);
   const [status, setStatus] = useState<TracePreviewState["status"]>("idle");
   const [error, setError] = useState<string | null>(null);
   const requestSequenceRef = useRef(0);
   const completedTraceKeyRef = useRef<string | null>(null);
 
-  const sourceKind = resolveLogoSourceKind(logo);
+  const sourceKind = logo ? resolveLogoSourceKind(logo) : null;
+  const logoId = logo?.id ?? null;
+  const rasterSourceDataUrl = logo?.rasterSourceDataUrl ?? null;
+  const backgroundMode = logo?.backgroundMode ?? "auto";
+  const traceSettings = logo?.traceSettings ?? null;
+  const vectorSvg = logo?.vectorSvg ?? null;
+  const originalFileName = logo?.originalFileName ?? null;
+
   const traceKey = useMemo(() => {
-    if (sourceKind !== "raster" || !logo.rasterSourceDataUrl) {
+    if (sourceKind !== "raster" || !rasterSourceDataUrl) {
       return null;
     }
 
     return JSON.stringify({
-      source: logo.rasterSourceDataUrl,
-      backgroundMode: logo.backgroundMode,
-      traceSettings: logo.traceSettings,
+      logoId,
+      source: rasterSourceDataUrl,
+      backgroundMode,
+      traceSettings,
     });
-  }, [logo.backgroundMode, logo.rasterSourceDataUrl, logo.traceSettings, sourceKind]);
+  }, [backgroundMode, logoId, rasterSourceDataUrl, traceSettings, sourceKind]);
 
   useEffect(() => {
-    if (sourceKind !== "raster" || !logo.rasterSourceDataUrl || !traceKey) {
+    if (sourceKind !== "raster" || !rasterSourceDataUrl || !traceKey || !logoId) {
       completedTraceKeyRef.current = null;
       const resetTimer = window.setTimeout(() => {
         setError(null);
@@ -189,7 +198,7 @@ export function useLogoTracePreview(): TracePreviewState {
       };
     }
 
-    if (completedTraceKeyRef.current === traceKey && logo.vectorSvg) {
+    if (completedTraceKeyRef.current === traceKey && vectorSvg) {
       const successTimer = window.setTimeout(() => {
         setError(null);
         setStatus("success");
@@ -211,18 +220,18 @@ export function useLogoTracePreview(): TracePreviewState {
           setStatus("loading");
 
           const processedSource = await processRasterSourceDataUrl(
-            logo.rasterSourceDataUrl as string,
-            logo.backgroundMode,
-            logo.traceSettings
+            rasterSourceDataUrl,
+            backgroundMode,
+            traceSettings
           );
 
-          const vectorSvg = await traceRasterDataUrlToSvg(
+          const tracedSvg = await traceRasterDataUrlToSvg(
             processedSource.traceDataUrl,
             {
               fileName: createTraceFileName(
-                logo.originalFileName ?? "logo.png"
+                originalFileName ?? "logo.png"
               ),
-              traceSettings: logo.traceSettings,
+              traceSettings: traceSettings!,
             }
           );
 
@@ -230,15 +239,15 @@ export function useLogoTracePreview(): TracePreviewState {
             return;
           }
 
-          const cleanedVectorSvg = vectorSvg.replace(
+          const cleanedVectorSvg = tracedSvg.replace(
             /background:\s*[^;"]+;?/gi,
             ""
           );
 
-          setLogo({
+          updateLogo(logoId, {
             dataUrl: processedSource.previewDataUrl,
             vectorSvg: cleanedVectorSvg,
-            processedBackgroundMode: logo.backgroundMode,
+            processedBackgroundMode: backgroundMode,
           });
           completedTraceKeyRef.current = traceKey;
           setError(null);
@@ -263,12 +272,13 @@ export function useLogoTracePreview(): TracePreviewState {
       window.clearTimeout(timeoutId);
     };
   }, [
-    logo.backgroundMode,
-    logo.originalFileName,
-    logo.rasterSourceDataUrl,
-    logo.traceSettings,
-    logo.vectorSvg,
-    setLogo,
+    backgroundMode,
+    logoId,
+    originalFileName,
+    rasterSourceDataUrl,
+    traceSettings,
+    updateLogo,
+    vectorSvg,
     sourceKind,
     traceKey,
   ]);
@@ -276,7 +286,7 @@ export function useLogoTracePreview(): TracePreviewState {
   return {
     status,
     error,
-    traceSettings: logo.traceSettings,
+    traceSettings: traceSettings ?? { style: "color" } as TraceSettings,
     sourceKind,
   };
 }
